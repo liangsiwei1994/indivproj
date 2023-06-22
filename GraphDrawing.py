@@ -14,10 +14,12 @@ Created on Fri Jun 16 08:40:37 2023
 import pygraphviz as pgv
 import queue
 from MitreDataFunctions import *
+import numpy as np
 
 # Sequence given in https://www.cisa.gov/news-events/cybersecurity-advisories/aa22-320a
 sample = ['T1190', 'T1059', 'T1562', 'T1105', 'T1070', 'T1136', 'T1016', 'T1053', 'T1021', 'T1078', 'T1136', 'T1090', 'T1018', 'T1098', 'T1003']
-# sample = ['T1190']
+# Sequence given in https://www.cisa.gov/news-events/cybersecurity-advisories/aa22-321a
+# sample = ['T1133', 'T1566', 'T1190', 'T1562', 'T1059', 'T1490', 'T1070', 'T1112', 'T1537', 'T1486']
 
 # Create a dictionary of which part(s) of the attack lifecycle each tactic belong to
 # <<'Initial Access' : ['Initial Compromise']>> means the tactic 'Initial Access' belongs to the attack lifecycle stage called 'Initial Compromise' 
@@ -37,10 +39,14 @@ tactic_lifecycle_mapping = {
     }
 
 # Expected sequence of stages
-stages_seq = ['Initial Compromise', 'Establish Foothold', 'Escalate Privilege', 'Internal Reconnaisance', 'Move Laterally', 'Maintain Presence', 'Impact']
+stages_seq = ['Initial Compromise', 'Establish Foothold', 'Escalate Privilege', 'Internal Reconnaissance', 'Move Laterally', 'Maintain Presence', 'Complete Mission']
 
 # Stages that cannot be missing
 compulsory_stages = ['Initial Compromise']
+# Array to check if the required stages' tactics can be found if we want to backfill (listed in sequence of compulsory stages)
+compulsory_stages_specific_tactics = {
+    'Initial Compromise'    : ['Initial Access'],
+    }
 
 # Stages which can be repeated multiple times in the cycle
 cyclical_stages = ['Escalate Privilege', 'Internal Reconnaissance', 'Move Laterally', 'Maintain Presence']
@@ -51,29 +57,29 @@ flexible_tactics = ['Execution', 'Defense Evasion', 'Credential Access', 'Comman
 
 
 # Generate label string for each node using the lifecycle stage name and the technique list given
-def generate_string(stage, technique_list):
+def generate_string(stage, tactic_list, technique_list):
     result = '<f0> ' + stage + ' | {<f1> '
     if (len(technique_list) == 0):
         result += ('Missing compulsory stage')
     else:
-        for technique in technique_list:
-            result += (technique + ' - ' + get_technique_name(technique) + '\\n')
+        for i in range(len(technique_list)):
+            result += (technique_list[i] + ' - ' + get_technique_name(technique_list[i]) + ' (' + tactic_list[i] + ') ' +'\\n')
     result += '}'
     return result
 
 
                 
 # Generate a graph using an array of stages (in sequence) and the techniques involved in each stage
-def generate_graph(stages, techniques):
+def generate_graph(stages, tactics, techniques):
     
     G = pgv.AGraph(strict=False, directed=True)
     
     # Find 2 types of missing info, no middle loop or doesn't end with impact
     if (stages[-1] != 'Complete Mission'):
         stage = 'Complete Mission'
-        technique_list = []
         stages.append(stage)
-        techniques.append(technique_list)
+        techniques.append([])
+        tactics.append([])
         
     # If it goes immediately from "Establish Foothold" to "Complete Mission", create a node to indicate that there's missing info
     final_position_checked = 0
@@ -83,6 +89,7 @@ def generate_graph(stages, techniques):
             if (stages[i] == 'Complete Mission' and stages[i-1] == 'Establish Foothold'):
                 stages.insert(i, 'Missing Info')
                 techniques.insert(i, ['Missing cycle between impact \\n and establish foothold'])
+                tactics.insert(i, ['No tactics'])
                 break
         final_position_checked = i
         
@@ -90,6 +97,9 @@ def generate_graph(stages, techniques):
         # print("Stages length: " + str(len(stages)))
         
 
+    print(len(stages))
+    print(len(tactics))
+    print(len(techniques))
     
     # Create nodes
     for i in range(len(stages)):
@@ -100,7 +110,7 @@ def generate_graph(stages, techniques):
         # print(techniques)
         # print(stages)
         # print(techniques[i])
-        node_label = generate_string(stages[i], techniques[i])
+        node_label = generate_string(stages[i], tactics[i], techniques[i])
         G.add_node(str(i), label = node_label, shape = 'record')
         
     # Create edges
@@ -191,8 +201,6 @@ def attack_lifecycle_mapping(technique_list_raw):
         # Get the technique to analyze
         current_technique = technique_list.get()
         
-        print(tactic_technique_combi)
-        
         # Get the respective tactics of the techniques from the queue
         current_tactics = tactic_technique_combi[tactic_technique_combi["parent_ID"] == current_technique].tactics.iloc[0]
         
@@ -246,7 +254,7 @@ def attack_lifecycle_mapping(technique_list_raw):
                     current_branch_tracker = len(current_stage_sequence)
                     current_stage_sequence.append('Initial Compromise')
                     current_technique_sequence.append([current_technique])
-                    current_tactic_sequence.append([current_tactics])
+                    current_tactic_sequence.append([current_tactics[0]])
                     last_stage = 'Initial Compromise'  
                     initial_compromise_filled = True
                     
@@ -260,7 +268,7 @@ def attack_lifecycle_mapping(technique_list_raw):
                     # Create the following stage
                     current_stage_sequence.append(possible_stages[0])
                     current_technique_sequence.append([current_technique])
-                    current_tactic_sequence.append([current_tactics])
+                    current_tactic_sequence.append([current_tactics[0]])
                     last_stage = possible_stages[0]
                     
                     
@@ -271,7 +279,7 @@ def attack_lifecycle_mapping(technique_list_raw):
                     if current_stage_sequence[i] == 'Initial Compromise':
                         current_technique_sequence[i].append(current_technique)
                         # Immediately append tactic because there's only 1 tactic
-                        current_tactic_sequence[i].append(current_tactics)
+                        current_tactic_sequence[i].append(current_tactics[0])
                         initial_compromise_filled = True
                         
             
@@ -285,9 +293,11 @@ def attack_lifecycle_mapping(technique_list_raw):
                         if (cyclical_stages[i%(len(cyclical_stages))] == possible_stages[0]):
                             if i == index:
                                 current_technique_sequence[-1].append(current_technique)
+                                current_tactic_sequence[-1].append(current_tactics[0])
                                 break
                             else:
                                 current_stage_sequence.append(cyclical_stages[i%4])
+                                current_tactic_sequence.append([current_tactics[0]])
                                 current_technique_sequence.append([current_technique])
                                 last_stage = cyclical_stages[i%4]
                                 break
@@ -301,11 +311,12 @@ def attack_lifecycle_mapping(technique_list_raw):
                             # If the earliest stage is the last existing stage, add to it
                             if i == index:
                                 current_technique_sequence[-1].append(current_technique)
+                                current_tactic_sequence[-1].append(current_tactics[0])
                             # If not, create a new stage
                             else:
                                 current_stage_sequence.append(possible_stages[0])
                                 current_technique_sequence.append([current_technique])
-                                current_tactic_sequence.append([current_tactics])
+                                current_tactic_sequence.append([current_tactics[0]])
                                 last_stage = possible_stages[0]
                 
                     
@@ -315,107 +326,347 @@ def attack_lifecycle_mapping(technique_list_raw):
                 print("+++++++++++++++++++++++++++++++++++++++++++++++++++")
                 current_stage_sequence.append('Initial Compromise')
                 current_technique_sequence.append([current_technique])
+                current_tactic_sequence.append([current_tactics[0]])
                 print("---------------------------------------------------")
            
             
-        # If the technique belongs to multiple stages of the attack lifecycle, then LOOK AT TACTICS
-        # Fill up based on the last stage or earliest possible stage if there is no last stage (Defense evasion, Execution and Command and Control)
+        # Logic 4: If the technique belongs to multiple stages of the attack lifecycle, then LOOK AT TACTICS
+        # We look at the most specific tactic first, then fill it up based at the latest stage of the closest next stage if the latest stage doesn't match. 
+        # Mainly (Defense evasion, Execution, Credential Access and Command and Control)
         else:
             
-            # If all of the tactics belongs to the flexible tactics, then fill in the previous stage or the first available stage
-            if (check_elements(possible_tactics, flexible_tactics)):
-                earliest_possible_stage_index = -1
-                mapped = False
-                for i in range(len(current_stage_sequence)-1, current_branch_tracker-1, -1):
-                    # then map it to the latest stage
-                    if (len(current_technique_sequence[i]) > 0) and (current_stage_sequence[i] in possible_stages):
-                        current_technique_sequence[i].append(current_technique)
-                        break
-                    # if not, map it to the earliest stage by tracking the earliest possible stage (e.g. if execution is the tactic of the first technique observed and no other stages are filled, map it to the earliest stage aka 'initial compromise)
-                    elif (current_stage_sequence[i] in possible_stages):
-                        earliest_possible_stage_index = i
-                    elif (i == current_branch_tracker):
-                        current_technique_sequence[earliest_possible_stage_index].append(current_technique)
-                        # if current_stage_sequence[earliest_possible_stage_index] == 'Initial Compromise':
-                            # initial_compromise_filled = True
-                        # if current_stage_sequence[earliest_possible_stage_index] == 'Establish Foothold':
-                            # establish_foothold_filled = True
+            # Logic 5: If the previous stage was 'Mission Complete' AND it's a flexible tactic, all the flexible tactic to the 'Mission Complete' Stage
+            if (last_stage == 'Mission Complete') :
+                
+                # Logic 5.1: If the previous stage was 'Mission Complete' AND it's a technique that only belongs to flexible tactics, map the technique to the 'Mission Complete' Stage
+                if(check_elements(possible_tactics, flexible_tactics)):
+                    current_technique_sequence[-1].append(current_technique)
+                    unique_tactic = list(set(possible_tactics))
+                    tactic_str = unique_tactic[0]
+                    for i in range(1, len(unique_tactic)):
+                        tactic_str += (' + ' + unique_tactic[i])
+                    current_tactic_sequence[-1].append(tactic_str)
+                    
+                # Logic 5.2: Else, create a new branch and prioritize all the specific tactics first
+                else:
+                    possible_tactics_np_array = np.array(possible_tactics)
+                    flexible_tactics_np_array = np.array(flexible_tactics)
+                    # Note: Exfiltration/Impact won't come here because those will fall above
+                    difference = np.setdiff1d(possible_tactics_np_array, flexible_tactics_np_array)
+                    mapped = False
+                    
+                    # Logic 5.2.1: If initial access is found in the current technique's array and initial access is not filled, 
+                    # give benefit of doubt and backfill
+                    for stage in compulsory_stages:
+                        # bool to track if the current technique is mapped, once mapped, stop looping
+                       
+                        if (check_elements(compulsory_stages_specific_tactics[stage], difference)) :
+                            # If initial access is found, check if the current branch is filled, if filled, start a new branch
+                            if initial_compromise_filled:
+                                current_branch_tracker = len(current_stage_sequence)
+                                current_stage_sequence.append(stage)
+                                current_tactic_sequence.append([])
+                                current_technique_sequence.append([])
+                                if stage == 'Initial Compromise':
+                                    initial_compromise_filled = False
+                            # Loop across the new/existing branch to find initial compromise (which initial access can fill) and fill it up
+                            for i in range(current_branch_tracker, len(current_stage_sequence)):
+                                if current_stage_sequence[i] == stage:
+                                    current_technique_sequence[i].append(current_technique)
+                                    tactics_str = compulsory_stages_specific_tactics[stage][0]
+                                    # Label the tactic with all the possible tactics
+                                    for i in range(1, len(compulsory_stages_specific_tactics[stage])):
+                                        tactics_str += (' + ' + compulsory_stages_specific_tactics[i])
+                                    current_tactic_sequence[i].append(tactics_str)
+                                    initial_compromise_filled = True
+                                    last_stage = stage
+                                    mapped = True
+                                    break
+                
+                    # Logic 5.2.2: If cannot find compulsory stage in the compulsory stages, move to specific ones but not initial access, then create a new branch
+                    if not mapped:
+                        # Create an array of all the tactics that doesn't belong the compulsory stage
+                        # for stages not in compulsory stage, get their tactics, the find the tactics in the possible tactics
+                        compulsory_stages_tactics = sum(compulsory_stages_specific_tactics.values(), [])
+                        difference_no_compulsory = np.setdiff1d(difference, compulsory_stages_tactics)
+                        possible_specific_stages = []
+                        possible_specific_tactics = []
+                        
+                        
+                        # Find all the possible stages based on the tactics that are specific but not compulsory
+                        for tactic in difference_no_compulsory:
+                            current_stages = tactic_lifecycle_mapping[tactic]
+                            for i in range(len(current_stages)):
+                                possible_specific_tactics.append(tactic)
+                                possible_specific_stages.append(current_stages[i])
+                        
+                        # Create a new branch and start with 'Initial Compromise' stage but leave it empty
+                        current_branch_tracker = len(current_stage_sequence)
+                        current_stage_sequence.append('Initial Compromise')
+                        current_tactic_sequence.append([])
+                        current_technique_sequence.append([])
+                                
+                        # Find the closest stage to map the current tactic to
+                        for stage2 in stages_seq:
+                            if stage2 in possible_specific_stages:
+                                # Create the string of tactics based on that stage
+                                tactic_str = ''
+                                for i in range(len(possible_specific_stages)):
+                                    if possible_specific_stages[i] == stage2:
+                                        tactic_str += possible_specific_tactics[i]
+                                current_stage_sequence.append(stage2)
+                                current_tactic_sequence.append([tactic_str])
+                                current_technique_sequence.append([current_technique])
+                                last_stage = stage2
+                                mapped = True
+                                break
+                        
+                    # # If the current technique has been mapped, then move to the next technique
+                    # if mapped:
+                    #     break
+            
+            #Logic 6: If the previous stage is not 'Mission Complete'
+            else:
+                
+                # Logic 6.1: If the previous stage was 'Mission Complete' AND it's a technique that only belongs to flexible tactics, map the technique to the previous stage
+                if(check_elements(possible_tactics, flexible_tactics)):
+                    current_technique_sequence[-1].append(current_technique)
+                    unique_tactic = list(set(possible_tactics))
+                    tactic_str = unique_tactic[0]
+                    for i in range(1, len(unique_tactic)):
+                        tactic_str += (' + ' + unique_tactic[i])
+                    current_tactic_sequence[-1].append(tactic_str)
+                    
+                # Logic 6.2: Else if 'Initial Compromise' is in one of the stages and it's not filled yet in the current branch, fill it up
+                else:
+                    possible_tactics_np_array = np.array(possible_tactics)
+                    flexible_tactics_np_array = np.array(flexible_tactics)
+                    # Note: Exfiltration/Impact won't come here because those will fall above
+                    difference = np.setdiff1d(possible_tactics_np_array, flexible_tactics_np_array)
+                    mapped = False
+                    
+                    # Logic 6.2.1: If initial access is found in the current technique's array and initial access is not filled, 
+                    # give benefit of doubt and backfill
+                    for stage in compulsory_stages:
+                        # bool to track if the current technique is mapped, once mapped, stop looping
+                        if (check_elements(compulsory_stages_specific_tactics[stage], difference)) :
+                            # If initial access is found, check if the current branch is filled, if filled, do not fill and start looking at other specific techniques
+                            if not initial_compromise_filled:
+                                # Loop across the new/existing branch to find initial compromise (which initial access can fill) and fill it up
+                                for i in range(current_branch_tracker, len(current_stage_sequence)):
+                                    if current_stage_sequence[i] == stage:
+                                        current_technique_sequence[i].append(current_technique)
+                                        tactics_str = compulsory_stages_specific_tactics[stage][0]
+                                        # Label the tactic with all the possible tactics
+                                        for i in range(1, len(compulsory_stages_specific_tactics[stage])):
+                                            tactics_str += (' + ' + compulsory_stages_specific_tactics[i])
+                                        current_tactic_sequence[i].append(tactics_str)
+                                        initial_compromise_filled = True
+                                        last_stage = stage
+                                        mapped = True
+                                        break
+                
+                    # Logic 6.2.2: If cannot find compulsory stage in the compulsory stages, move to specific ones but not initial access, then create a new branch
+                    if not mapped:
+                        # Create an array of all the tactics that doesn't belong the compulsory stage
+                        # for stages not in compulsory stage, get their tactics, the find the tactics in the possible tactics
+                        compulsory_stages_tactics = sum(compulsory_stages_specific_tactics.values(), [])
+                        difference_no_compulsory = np.setdiff1d(difference, compulsory_stages_tactics)
+                        possible_specific_stages = []
+                        possible_specific_tactics = []
+                        
+                        
+                        # Find all the possible stages based on the tactics that are specific but not compulsory
+                        for tactic in difference_no_compulsory:
+                            current_stages = tactic_lifecycle_mapping[tactic]
+                            for i in range(len(current_stages)):
+                                possible_specific_tactics.append(tactic)
+                                possible_specific_stages.append(current_stages[i])
+                                
+                        # If last stage not in circular zone, then slowly traverse down the sequence
+                        if last_stage not in cyclical_stages:
+                            # Find the closest stage to map the current tactic to
+                            for stage2 in stages_seq:
+                                if stage2 in possible_specific_stages:
+                                    # Create the string of tactics based on that stage
+                                    tactic_str = ''
+                                    for i in range(len(possible_specific_stages)):
+                                        if possible_specific_stages[i] == stage2:
+                                            tactic_str += possible_specific_tactics[i]
+                                    current_stage_sequence.append(stage2)
+                                    current_tactic_sequence.append([tactic_str])
+                                    current_technique_sequence.append([current_technique])
+                                    last_stage = stage2
+                                    mapped = True
+                                    break
+                        
+                        # Else, if in cyclical zone, find the closest cylical stage to map the current tactic to
+                        else:
+                            print("HEREREEEEE")
+                            print(last_stage)
+                            print(possible_specific_stages)
+                            index = cyclical_stages.index(last_stage)
+                            for i in range(index, index+len(cyclical_stages)):
+                                if cyclical_stages[i%len(cyclical_stages)] in possible_specific_stages:
+                                    print("ALERT: " + cyclical_stages[i%len(cyclical_stages)])
+                                    # Create the string of tactics based on that stage
+                                    tactic_str = ''
+                                    for j in range(len(possible_specific_stages)):
+                                        if possible_specific_stages[j] == cyclical_stages[i%len(cyclical_stages)]:
+                                            tactic_str += possible_specific_tactics[j]
+                                    print(cyclical_stages[i%len(cyclical_stages)])
+                                    # If it is mapped to last stage, then simply append the technique and tactic to the last stage
+                                    if i == index:
+                                        current_tactic_sequence[-1].append(tactic_str)
+                                        current_technique_sequence[-1].append(current_technique)
+                                    else:
+                                        current_stage_sequence.append(cyclical_stages[i%len(cyclical_stages)])
+                                        current_tactic_sequence.append([tactic_str])
+                                        current_technique_sequence.append([current_technique])
+                                        last_stage = cyclical_stages[i%len(cyclical_stages)]
+                                        print("LAST STAGE: " + last_stage)
+                                    mapped = True
+                                    break
+                            
+                
+                        
+                            
+                        
+            
+            
+                
+            #     current_branch_tracker = len(current_stage_sequence)
+            #     initial_compromise_filled = False
+                
+            #     if possible_stages[0] == 'Initial Compromise':
+            #         # Update the branch tracker that a new branch has started
+            #         current_branch_tracker = len(current_stage_sequence)
+            #         current_stage_sequence.append('Initial Compromise')
+            #         current_technique_sequence.append([current_technique])
+            #         current_tactic_sequence.append([current_tactics])
+            #         last_stage = 'Initial Compromise'  
+            #         initial_compromise_filled = True
+                    
+            #     else:
+            #         # Update the branch tracker that a new branch has started
+            #         current_branch_tracker = len(current_stage_sequence)
+            #         # Create an empty 'Initial Compromise' stage
+            #         current_stage_sequence.append('Initial Compromise')
+            #         current_technique_sequence.append([])
+            #         current_tactic_sequence.append([])
+            #         # Create the following stage
+            #         current_stage_sequence.append(possible_stages[0])
+            #         current_technique_sequence.append([current_technique])
+            #         current_tactic_sequence.append([current_tactics])
+            #         last_stage = possible_stages[0]
+            
+            # # Logic 6: If all of the tactics belongs to the flexible tactics, then fill in the latest stage from the back
+            # elif (check_elements(possible_tactics, flexible_tactics)):
+            #     current_technique_sequence[-1].append(current_technique)
                 
             
-            # If one of the possible stages it can belong to is 'Initial Compromise' and it is not filled yet, fill it up
-            elif ('Initial Compromise' in possible_stages) and not initial_compromise_filled:
-                for i in range(current_branch_tracker, len(current_stage_sequence)):
-                    if current_stage_sequence[i] == 'Initial Compromise':
-                        current_technique_sequence[i].append(current_technique)
-                        initial_compromise_filled = True
-                        break
                 
-            # Else if one of the possible stages is 'Establish Foothold' and it is not filled yet, fill it up
-            # elif ('Establish Foothold' in possible_stages) and not establish_foothold_filled:
-            #     for i in range(current_branch_tracker, len(current_stage_sequence)):
-            #         if current_stage_sequence[i] == 'Establish Foothold':
+                
+            
+                    
+                    
+                    
+            
+            #     else:
+            #         index = cyclical_stages.index(last_stage)
+            #         for i in range(index, index+4):
+            #             if cyclical_stages[i%4] in possible_stages:
+            #                 current_stage_sequence.append(possible_stages[0])
+                            
+                    
+                    
+                    
+                
+            #     earliest_possible_stage_index = -1
+            #     for i in range(len(current_stage_sequence)-1, current_branch_tracker-1, -1):
+            #         # then map it to the latest stage
+            #         if (len(current_technique_sequence[i]) > 0) and (current_stage_sequence[i] in possible_stages):
             #             current_technique_sequence[i].append(current_technique)
-            #             establish_foothold_filled = True
             #             break
+            #         # if not, map it to the earliest stage by tracking the earliest possible stage (e.g. if execution is the tactic of the first technique observed and no other stages are filled, map it to the earliest stage aka 'initial compromise)
+            #         elif (current_stage_sequence[i] in possible_stages):
+            #             earliest_possible_stage_index = i
+            #         elif (i == current_branch_tracker):
+            #             current_technique_sequence[earliest_possible_stage_index].append(current_technique)
+            #             # if current_stage_sequence[earliest_possible_stage_index] == 'Initial Compromise':
+            #                 # initial_compromise_filled = True
+            #             # if current_stage_sequence[earliest_possible_stage_index] == 'Establish Foothold':
+            #                 # establish_foothold_filled = True
+                
+            
+            
+                
+            # # Else if one of the possible stages is 'Establish Foothold' and it is not filled yet, fill it up
+            # # elif ('Establish Foothold' in possible_stages) and not establish_foothold_filled:
+            # #     for i in range(current_branch_tracker, len(current_stage_sequence)):
+            # #         if current_stage_sequence[i] == 'Establish Foothold':
+            # #             current_technique_sequence[i].append(current_technique)
+            # #             establish_foothold_filled = True
+            # #             break
                     
         
-            # If not, prioritize the specific tactics and go to the next closest stage
-            else:
-                possible_tactics_np_array = np.array(possible_tactics)
-                flexible_tactics_np_array = np.array(flexible_tactics)
-                # FOCUS ON THE LESS FLEXIBLE TACTICS: Fill up Persistence/Privilege Escalation/Lateral Movement if not filled 
-                # Note: Exfiltration/Impact won't come here because those will fall above
-                difference = np.setdiff1d(possible_tactics_np_array, flexible_tactics_np_array)
-                last_stage = current_stage_sequence[-1]
+            # # If not, prioritize the specific tactics and go to the next closest stage
+            # else:
+            #     possible_tactics_np_array = np.array(possible_tactics)
+            #     flexible_tactics_np_array = np.array(flexible_tactics)
+            #     # FOCUS ON THE LESS FLEXIBLE TACTICS: Fill up Persistence/Privilege Escalation/Lateral Movement if not filled 
+            #     # Note: Exfiltration/Impact won't come here because those will fall above
+            #     difference = np.setdiff1d(possible_tactics_np_array, flexible_tactics_np_array)
+            #     last_stage = current_stage_sequence[-1]
                 
-                # if previous stage is initial compromise (means it's filled), then check if it's establish foothold, if not, move to cyclical zone and fill in the earliest possible
-                # A new branch should not be created if initial compromise is one of the multiple stages possible. Because it's 'MULTIPLE STAGES', hence this means there are other stages they can fill.
-                if (last_stage == 'Initial Compromise'):
-                    map_to_est_foothold = False
-                    for i in difference:
-                        if 'Establish Foothold' in tactic_lifecycle_mapping[i]:
-                            map_to_est_foothold = True
+            #     # if previous stage is initial compromise (means it's filled), then check if it's establish foothold, if not, move to cyclical zone and fill in the earliest possible
+            #     # A new branch should not be created if initial compromise is one of the multiple stages possible. Because it's 'MULTIPLE STAGES', hence this means there are other stages they can fill.
+            #     if (last_stage == 'Initial Compromise'):
+            #         map_to_est_foothold = False
+            #         for i in difference:
+            #             if 'Establish Foothold' in tactic_lifecycle_mapping[i]:
+            #                 map_to_est_foothold = True
                             
-                    if map_to_est_foothold:
-                        current_stage_sequence.append('Establish Foothold')
-                        current_technique_sequence.append([current_technique])
-                        map_to_est_foothold = False
+            #         if map_to_est_foothold:
+            #             current_stage_sequence.append('Establish Foothold')
+            #             current_technique_sequence.append([current_technique])
+            #             map_to_est_foothold = False
                         
                                     
-                # if previous stage is establish foothold and it's filled, then check if it's persistence, if persistence, stick it to establish foothold, else, move on to next stage
-                elif (last_stage == 'Establish Foothold'):
-                    for i in difference:
-                        # the general classes wouldn't have fallen here because they have been removed above
-                        if 'Establish Foothold' in tactic_lifecycle_mapping[i]:
-                            current_technique_sequence[-1].append(current_technique)
-                            break
+            #     # if previous stage is establish foothold and it's filled, then check if it's persistence, if persistence, stick it to establish foothold, else, move on to next stage
+            #     elif (last_stage == 'Establish Foothold'):
+            #         for i in difference:
+            #             # the general classes wouldn't have fallen here because they have been removed above
+            #             if 'Establish Foothold' in tactic_lifecycle_mapping[i]:
+            #                 current_technique_sequence[-1].append(current_technique)
+            #                 break
                             
                         
                         
-                # if previous stage is cyclical stages, then prioritize the more specific tactics that belongs to the cyclical zone and fill the earliest possible
-                else:
+            #     # if previous stage is cyclical stages, then prioritize the more specific tactics that belongs to the cyclical zone and fill the earliest possible
+            #     else:
                     
-                    # get all the possible stages
-                    possible_stages_in_difference = []
-                    for tactic in difference:
-                        current_possible_stages = tactic_lifecycle_mapping[tactic]
-                        for i in range(len(current_possible_stages)):
-                            possible_stages_in_difference.append(current_possible_stages[i])
+            #         # get all the possible stages
+            #         possible_stages_in_difference = []
+            #         for tactic in difference:
+            #             current_possible_stages = tactic_lifecycle_mapping[tactic]
+            #             for i in range(len(current_possible_stages)):
+            #                 possible_stages_in_difference.append(current_possible_stages[i])
                         
-                    # Get the position of the last existing stage in the cyclical zone
-                    index = cyclical_stages.index(last_stage)
+            #         # Get the position of the last existing stage in the cyclical zone
+            #         index = cyclical_stages.index(last_stage)
                         
-                    for i in range(index, index+4):
-                        if cyclical_stages[i%4] in possible_stages_in_difference:
-                            if i == index:
-                                current_technique_sequence[-1].append(current_technique)
-                                break
-                            else:
-                                current_stage_sequence.append(cyclical_stages[i%4])
-                                current_technique_sequence.append([current_technique])
-                                break
+            #         for i in range(index, index+4):
+            #             if cyclical_stages[i%4] in possible_stages_in_difference:
+            #                 if i == index:
+            #                     current_technique_sequence[-1].append(current_technique)
+            #                     break
+            #                 else:
+            #                     current_stage_sequence.append(cyclical_stages[i%4])
+            #                     current_technique_sequence.append([current_technique])
+            #                     break
                             
-                            # if previous stage is complete mission, then branch out aka just add initial access and establish foothold, then let the graph drawing function  to drop the empty portion.
+            #                 # if previous stage is complete mission, then branch out aka just add initial access and establish foothold, then let the graph drawing function  to drop the empty portion.
                             
                                     
                                 
@@ -425,9 +676,10 @@ def attack_lifecycle_mapping(technique_list_raw):
           
     print("======================")
     print(current_stage_sequence)
+    print(current_tactic_sequence)
     print(current_technique_sequence)
     print("======================")
-    generate_graph(current_stage_sequence, current_technique_sequence)
+    generate_graph(current_stage_sequence, current_tactic_sequence, current_technique_sequence)
     
     return
 
