@@ -18,3 +18,4 @@
 
 # ignore all csv files generates
 *.csv
+!enterprise-techniques-appended.csv
