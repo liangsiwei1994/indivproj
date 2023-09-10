@@ -80,7 +80,7 @@ def get_technique_df(version = None):
         techniques_df.at[index, "parent_name"] = techniques_df[techniques_df["ID"] == row["ID"][:5]]["name"].iloc[0]
         
     # Save to csv file to check
-    techniques_df.to_csv("Check Parent Name.csv")
+    # techniques_df.to_csv("Check Parent Name.csv")
     
     
     
@@ -89,7 +89,7 @@ def get_technique_df(version = None):
         techniques_df.at[index, "parent_ID"] = techniques_df[techniques_df["ID"] == row["ID"][:5]]["ID"][:5].iloc[0]
     
     # Save to csv file to check ID
-    techniques_df.to_csv("Check Parent ID.csv")
+    # techniques_df.to_csv("Check Parent ID.csv")
     
     df1 = techniques_df.drop_duplicates(subset=["parent_ID", "parent_name", "tactics"]) 
     
