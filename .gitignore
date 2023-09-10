@@ -1,3 +1,5 @@
+# ignore models files
+**/models/
 
 # ignore test files
 **/test_explored/
