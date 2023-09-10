@@ -1,0 +1,28 @@
+In February 2022, the threat actors exploited Log4Shell for initial access to the organization’s unpatched VMware Horizon server. As part of their initial exploitation, CISA observed a connection to known malicious IP address 182.54.217[.]2 lasting 17.6 seconds.
+
+The actors’ exploit payload ran the following PowerShell command that added an exclusion rule to Windows Defender:
+
+powershell try{Add-MpPreference -ExclusionPath 'C:\'; Write-Host 'added-exclusion'} catch {Write-Host 'adding-exclusion-failed' }; powershell -enc "$BASE64 encoded payload to download next stage and execute it"
+
+The exclusion rule allowlisted the entire c:\drive, enabling threat actors to download tools to the c:\drive without virus scans. The exploit payload then downloaded mdeploy.text from 182.54.217[.]2/mdepoy.txt to C:\users\public\mde.ps1. When executed, mde.ps1 downloaded file.zip from 182.54.217[.]2 and removed mde.ps1 from the disk.
+
+file.zip contained XMRig cryptocurrency mining software and associated configuration files.
+
+WinRing0x64.sys – XMRig Miner driver
+wuacltservice.exe – XMRig Miner
+config.json – XMRig miner configuration
+RuntimeBroker.exe – Associated file. This file can create a local user account and tests for internet connectivity by pinging 8.8.8.8. The exploit payload created a Scheduled Task that executed RuntimeBroker.exe daily as SYSTEM. Note: By exploiting Log4Shell, the actors gained access to a VMware service account with administrator and system level access. The Scheduled Task was named RuntimeBrokerService.exe to masquerade as a legitimate Windows task.
+See MAR 10387061-1.v1 for additional information, including IOCs, on these four files.
+
+After obtaining initial access and installing XMRig on the VMWare Horizon server, the actors used RDP and the built-in Windows user account DefaultAccount to move laterally to a VMware VDI-KMS host. Once the threat actor established themselves on the VDI-KMS host, CISA observed the actors download around 30 megabytes of files from transfer[.]sh server associated with 144.76.136[.]153. The actors downloaded the following tools:
+
+PsExec – a Microsoft signed tool for system administrators.
+Mimikatz – a credential theft tool.
+Ngrok – a reverse proxy tool for proxying an internal service out onto an Ngrok domain, which the user can then access at a randomly generated subdomain at *.ngrok[.]io. CISA has observed this tool in use by some commercial products for benign purposes; however, this process bypasses typical firewall controls and may be a potentially unwanted application in production environments. Ngrok is known to be used for malicious purposes.[1]
+The threat actors then executed Mimikatz on VDI-KMS to harvest credentials and created a rogue domain administrator account. Using the newly created account, the actors leveraged RDP to propagate to several hosts within the network. Upon logging into each host, the actors manually disabled Windows Defender via the Graphical User Interface (GUI) and implanted Ngrok executables and configuration files. The threat actors were able to implant Ngrok on multiple hosts to ensure Ngrok’s persistence should they lose access to a machine during a routine reboot. The actors were able to proxy RDP sessions, which were only observable on the local network as outgoing HTTPS port 443 connections to tunnel.us.ngrok[.]com and korgn.su.lennut[.]com (the prior domain in reverse). It is possible, but was not observed, that the threat actors configured a custom domain, or used other Ngrok tunnel domains, wildcarded here as *.ngrok[.]com, *.ngrok[.]io, ngrok.*.tunnel[.]com, or korgn.*.lennut[.]com.
+
+Once the threat actors established a deep foothold in the network and moved laterally to the domain controller, they executed the following PowerShell command on the Active Directory to obtain a list of all machines attached to the domain:
+
+Powershell.exe get-adcomputer -filter * -properties * | select name,operatingsystem,ipv4address &gt;
+
+The threat actors also changed the password for the local administrator account on several hosts as a backup should the rogue domain administrator account get detected and terminated. Additionally, the threat actor was observed attempting to dump the Local Security Authority Subsystem Service (LSASS) process with task manager but this was stopped by additional anti-virus the FCEB organization had installed.

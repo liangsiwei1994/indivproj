@@ -1,0 +1,165 @@
+CISA and authoring organizations observed multiple cyber threat actors, including an APT actor—hereafter referred to as Threat Actor 1 (TA1)—and known cybercriminal actor XE Group—hereafter referred to as Threat Actor 2 (TA2)—conducting reconnaissance and scanning activities that correlate to the successful exploitation of CVE-2019-18935 in the agency’s IIS server running Telerik UI for ASP.NET AJAX.
+
+When exploiting the vulnerability, the threat actors uploaded malicious dynamic-link library (DLL) files (some masqueraded as portable network graphics [PNG] files) to the C:\Windows\Temp\ directory. The malicious files were then executed from the C:\Windows\Temp\ directory via the w3wp.exe process—a legitimate process that runs on IIS servers. This process is routine for handling requests sent to web servers and delivering content. The review of antivirus logs identified that some DLL files were created and detected as early as August 2021.
+
+CISA and authoring organizations confirmed that some malicious files dropped on the IIS server are consistent with a previously reported file naming convention that threat actors commonly use when exploiting CVE-2019-18935.[4] The threat actors name the files in the Unix Epoch time format and use the date and time as recorded on the target system. The file naming convention follows the pattern [10 digits].[7 digits].dll (e.g., a file created on October 31, 2022, could be 1667203023.5321205.dll).
+
+The names of some of the PNG files were misleading. For example, file 1596835329.5015914.png, which decodes to August 7, 2020, 21:22:09 UTC, first appeared on October 13, 2022, but the file system shows a creation date of August 7, 2020. The uncorrelated Unix Epoch time format may indicate that the threat actors used the timestomping technique. This file naming convention is a primary IOC used by the threat actors.
+
+In many cases, malicious artifacts were not available for analysis because the threat actors’ malware—that looks for and removes files with the .dll file extension—removed files from the C:\Windows\Temp\ directory. Through full packet data capture analysis and reverse engineering of malicious DLL files, no indications of additional malicious activity or sub-processes were found executed by the w3wp.exe process. CISA observed error messages being sent to the threat actors’ command and control (C2) server when permission restraints prevented the service account from executing the malicious DLLs and writing new files.
+
+Network activity analysis was consistent with the artifacts provided for review. Analysts did not observe evidence of privilege escalation or lateral movement.
+
+Threat Actor 1
+CISA and authoring organizations observed TA1 exploiting CVE-2019-18935 for system enumeration beginning in August 2022. The vulnerability allows a threat actor to upload malicious DLLs on a target system and execute them by abusing a legitimate process, e.g., the w3wp.exe process. In this instance, TA1 was able to upload malicious DLL files to the C:\Windows\Temp\ directory and then achieve remote code execution, executing the DLL files via the w3wp.exe process.
+
+At least nine DLL files used for discovery [TA0007], C2 [TA0011], and defense evasion [TA0005]. All of the analyzed samples have network parameters, including host name, domain name, Domain Name System (DNS) server Internet Protocol (IP) address and machine name, Network Basic Input/Output System (NetBIOS) ID, adapter information, IP address, subnet, gateway IP, and Dynamic Host Configuration Protocol (DHCP) server. All analyzed samples communicate this collected data to a C2 server at IP address 137.184.130[.]162 or 45.77.212[.]12. The C2 traffic to these IP addresses uses a non-application layer protocol by leveraging Transmission Control Protocol (TCP) clear text (i.e., unencrypted) over port 443. Analysis also identified that:
+
+Some of the analyzed samples can load additional libraries; enumerate the system, processes, files, directories; and write files.
+Other analyzed samples can delete DLL files ending with the .dll extension in the C:\Windows\Temp\ directory on the server. TA1 may use this capability to hide additional malicious activity on the network.
+CISA, in coordination with the authoring organizations, identified and observed the following threat actor IPs and timestamps associated with this activity:
+
+Table 2: Observed TA1 IPs and Timestamps
+IP Address
+
+First Identified
+
+Last Identified
+
+137.184.130[.]162
+
+09/26/2022
+
+10/08/2022
+
+45.77.212[.]12
+
+10/07/2022
+
+11/25/2022
+
+104.225.129[.]102
+
+10/10/2022
+
+11/16/2022
+
+149.28.85[.]24
+
+10/12/2022
+
+10/17/2022
+
+185.186.245[.]72
+
+10/18/2022
+
+10/18/2022
+
+193.8.172[.]113
+
+09/25/2022
+
+09/25/2022
+
+193.8.172[.]13
+
+09/25/2022
+
+10/17/2022
+
+216.120.201[.]12
+
+10/13/2022
+
+11/10/2022
+
+5.34.178[.]246
+
+09/25/2022
+
+09/25/2022
+
+79.133.124[.]242
+
+09/25/2022
+
+09/25/2022
+
+92.38.169[.]193
+
+09/27/2022
+
+10/08/2022
+
+92.38.176[.]109
+
+09/12/2022
+
+09/25/2022
+
+92.38.176[.]130
+
+09/25/2022
+
+10/07/2022
+
+Threat Actor 2
+TA2—identified as likely the cybercriminal actor XE Group—often includes xe[word] nomenclature in original filenames and registered domains. Volexity lists this naming convention and other observed TTPs as common for this threat actor group.[5]]
+
+As early as August 2021, CISA and authoring organizations observed TA2 delivering malicious PNG files that, following analysis, were masqueraded DLL files to avoid detection. Similar to TA1, TA2 exploited CVE-2019-18935 and was able to upload at least three unique DLL files into the C:\Windows\Temp\ directory that TA2 executed via the w3wp.exe process. These DLL files drop and execute reverse (remote) shell utilities for unencrypted communication with C2 IP addresses associated with the malicious domains listed in Table 3. Note: At the time of analysis, the domains resolved to the listed IP addresses.
+
+Table 3: TA2 IPs and Resolving Domains
+IP Address
+
+Resolving Domains
+
+184.168.104[.]171
+
+xework[.]com
+
+xegroups[.]com
+
+hivnd[.]com
+
+144.96.103[.]245
+
+xework[.]com
+
+Analysis of DLL files determined the files listed in Table 4 were dropped, decoded, and attempted to connect to the respective malicious domains. Embedded payloads dropped by the DLL files were observed using the command line utility certutil[.]exe and writing new files as xesvrs[.]exe to invoke reverse shell utilities execution.
+
+Table 4: Identified Malicious Files
+Filename
+
+Description
+
+XEReverseShell.exe
+
+DLL files (masqueraded as PNG files) located in the C:\Windows\Temp\ directory contain a base64 encoded file with the internal name XEReverseShell.exe, which was dropped into the same directory as sortcombat.exe.
+
+When executed, the reverse shell utility attempts to connect to xework[.]com or xegroups[.]com to obtain the IP address of the C2 server and port number for unencrypted communication.
+
+Note: It is likely the threat actors changed the file extension from .dll to .png to avoid detection.
+
+Multi-OS_ReverseShell.exe
+
+Reverse shell utility decoded from the base64 encoded file xesmartshell.tmp.
+
+When executed, it will attempt to connect to xegroups[.]com or xework[.]com to obtain the IP address of the C2 server and port number for unencrypted communication.
+
+SortVistaCompat
+
+Base64 encoded payload dropped from Multi-OS_ReverseShell.exe. This file receives the C2 IP and port from xework[.]com.
+
+ When the TA2 malware is executed a DLL file drops an executable (XEReverseShell.exe) that attempts to pull a C2 IP address and port number from xework[.]com or xegroups[.]com.
+
+If no port or IP address is found, the program will exit.
+If a port and IP address are found, the program will establish a listener and wait for further commands.
+If communication is established between the TA2 malware and the C2:
+
+The malware will identify the operating system (Windows or Linux) and create the appropriate shell (cmd or bash), sending system information back to the C2.
+The C2 server may send the command xesetshell, causing the malware to connect to the server and download a file called small.txt—a base64-encoded webshell that the malware decodes and places in the C:\Windows\Temp\ directory.
+The C2 server may send the command xequit, causing the malware to sleep for a period of time determined by the threat actors.
+The two files xesmartshell.tmp and SortVistaCompat have the capability to drop an Active Server Pages (ASPX) webshell—a base64 encoded text file small.txt decoded as small.aspx —to enumerate drives; to send, receive, and delete files; and to execute incoming commands. The webshell contains an interface for easily browsing files, directories, or drives on the system, and allows the user to upload or download files to any directory. No webshells were observed to be dropped on the target system, likely due to the abused service account having restrictive write permissions.
+
+For more information on the DLLs, binaries, and webshell, see CISA MAR-10413062-1.v1 CVE-2019-18935 Exploitation in U.S. Government IIS Server.

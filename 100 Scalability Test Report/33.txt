@@ -1,0 +1,287 @@
+"RESOURCES • BLOG
+LINUX SECURITY
+
+Trapping the Netwire RAT on Linux
+The Netwire remote access trojan (RAT) has left a trail of crumbs across various platforms. Here’s how it looks on Linux.
+
+TONY LAMBERT
+Originally published January 29, 2020. Last modified June 7, 2022.
+Adversaries today have a slew of remote access trojans (RAT) to choose from, ranging from .NET tools for Windows to cross-platform RATs that work across multiple operating systems, such as CrossRAT, Pupy, and Netwire. While public research abounds examining the Windows and macOS versions of Netwire, the Linux variety is considerably less well known. Today we want to shed some extra light on Netwire for Linux.
+
+Intro to Netwire
+Netwire is a RAT distributed by World Wired Labs and marketed as a remote management tool. It allows remote access to Windows, macOS, Linux, and Solaris systems, and is primarily used to transfer files and conduct system management in multiple ways.
+
+Once you go beyond the initial veneer of legitimacy, you may notice some additional features that aren’t as benign. These include:
+
+keylogging
+masquerading network traffic with a browser user-agent string
+capturing screenshots
+accessing credentials in web browsers.
+Netwire allows the people using it to pivot their traffic through proxies and listen on whatever ports they need to receive encrypted command and control. A quick summary of the ATT&CK techniques used by Netwire are listed in a table at the end of this post, with the Linux-specific ones in bold.
+
+The notes section in the table includes links to Atomic Red Team tests, which can help you test your security controls with commands similar to the ones Netwire would actually use.
+
+The Linux Specifics
+Most of the functionality of Netwire is the same across platforms, with some minor exceptions. The Windows Registry doesn’t exist on non-Windows systems, so the persistence mechanisms have to change. In addition, the binary formats will be different across platforms. The Windows and macOS versions use Portable Executable and Mach-O, respectively. For Linux and Solaris, the binaries are in Executable and Linkable Format (ELF).
+
+The persistence mechanisms also change, offering the options to use XDG Autostart Entries and crontabs for persistence. We’ve waxed lyrical about crontabs before, but we haven’t explored XDG Autostart Entries in detail. These artifacts are similar to the Start Menu Startup Items for Windows.
+
+On any Unix-like system that uses a Freedesktop.org XDG-compliant desktop, you can add an autostart entry to execute an application or script when the desktop loads. These files usually exist under these folders, although you can change them with environment variables:
+
+/etc/xdg/autostart
+~/.config/autostart
+The Autostart Entry itself usually has a file extension of ‘.desktop.’ Its contents will look something like this:
+
+[Desktop Entry]
+Type=Application
+Exec=/home/user/.config/dbus-notifier/dbus-inotifier
+Name=system service d-bus notifier
+Netwire isn’t the only tool that uses this persistence mechanism: it has been used by Fysbis, Pupy, jRAT, and CrossRAT. In the case of Netwire, users can specify the name of the Autostart Entry and make it masquerade as something like a Linux system process if desired.
+
+Into the Lab!
+We ran across this Netwire sample on VirusTotal, with all of the other malware in the world.
+
+Netwire remote access trojan on Linux star wars
+We decided to download it and throw it into the test lab. At the bottom of the page we’ll include a link to the sample we used for analysis.
+
+After executing the sample, we noticed the sample copied itself to a hidden folder and launched from the hidden folder. This is a good first step to hide itself from casual observation on disk.
+
+Netwire remote access trojan on Linux hidden folderNetwire remote access trojan on Linux hidden folder
+ 
+
+This functionality corresponds to a configuration by the operator to install a copy of the RAT to a local folder for longer-term residence.
+
+Next, additional telemetry shows the creation of Netwire’s .desktop persistence mechanism and the creation of two additional files.
+
+Netwire remote access trojan persistence on Linux
+ 
+
+The file /tmp/.rOuYXzdOF was most likely used as a mutex, ensuring only one copy of Netwire could run at a time. Next, .default.conf was a configuration file storing data required for Netwire to communicate with command and control. On the Windows side, this is usually stored in the Registry. Finally, network connections were established for control by an adversary.
+
+Attributing to Netwire
+We worked with this sample from VirusTotal.
+
+For attribution to Netwire, we relied on a few data points. First, we took note of the antivirus detection rate and classification in VT. Next, we leaned on Patrick Wardle’s analysis of a Netwire variant for macOS. In the post, he provided several strings of interest that were extracted from the macOS Netwire sample. When we compared these strings against the Linux variant, we found 14 common strings that correspond with a user-agent string, network configuration discovery, and a rather unique string that may correspond to a session ID or password. The strings that matched are below:
+
+/bin/bash
+/bin/sh
+/tmp/.%s
+Accept-Language: en-US,en;q=0.8
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8
+CONNECT %s:%d HTTP/1.0
+Current IP Address:
+GET / HTTP/1.1
+Host: %s:%d
+Host: checkip.dyndns.org
+User-Agent: Mozilla/5.0 (Windows NT 6.3; WOW64; Trident/7.0; rv:11.0) like Gecko
+checkip.dyndns.org
+exit
+hyd7u5jdi8
+Finally, we matched up the remaining strings with the functionality of Netwire mentioned in a user manual available online. The release notes for a newer version of Netwire mentioned crontab support for persistence, and we observed a string indicating the agent might use a crontab -l command, although none was observed during execution earlier. We also observed strings indicating the use of HTTP and SOCKS proxy functions that were described in the Netwire manual. We assert with high confidence that this sample is a Netwire variant and is representative of a newer version.
+
+Bringing a lesser known variant of malware to the public is always fun, and hopefully the details shared here will help prevent or detect RATs in your environment!
+
+ATT&CK TECHNIQUES USED BY NETWIRE (LINUX-SPECIFIC IN BOLD)
+ATT&CK ID	TACTIC	DESCRIPTION	NOTES
+XDG Autostart Entries
+
+N/A
+
+Netwire may persist using XDG Autostart Entries on Linux systems.
+
+The name may be configured by a user at the time of binary compilation.
+
+Data Compressed (T1002)
+
+Exfiltration
+
+Netwire can automatically archive captured screenshots with compression.
+
+Application Window Discovery (T1010)
+
+Discovery
+
+Netwire can discover and close windows on controlled systems.
+
+System Network Configuration Discovery (T1016)
+
+Discovery
+
+Netwire contacts external domains to discover its public IP address.
+
+Netwire binaries are coded to use the domain checkip.dyndns.org
+
+Data Encrypted (T1022)
+
+Exfiltration
+
+Netwire stores captured keystrokes in encrypted log files.
+
+Standard Cryptographic Protocol (T1032)
+
+Command and Control
+
+Netwire uses AES encryption for data transferred.
+
+System Owner/User Discovery (T1033)
+
+Discovery
+
+Netwire can discover logged on users.
+
+Masquerading (T1036)
+
+Defense Evasion
+
+Netwire RATs have masqueraded as other software. In addition, its network traffic masquerades as its user agent.
+
+Netwire has impersonated TeamViewer, macOS Finder, and other software. It commonly uses the user agent Mozilla/5.0 (Windows NT 6.3; WOW64; Trident/7.0; rv:11.0) like Gecko.
+
+Masquerading tests from Atomic Red Team
+
+Software Packing (T1045)
+
+Defense Evasion
+
+Some campaigns using Netwire have used .NET packer tools for AV evasion.
+
+Scheduled Task (T1053)
+
+Execution, Persistence, Privilege Escalation
+
+Some campaigns using Netwire have used Scheduled Tasks for persistence.
+
+Scheduled Task functionality is not built into Netwire; it is usually implemented by another mechanism deploying Netwire.
+
+Scheduled Task tests from Atomic Red Team
+
+Process Injection (T1055)
+
+Defense Evasion, Privilege Escalation
+
+Some campaigns using Netwire have used process injection to shield execution from scrutiny.
+
+The code has been injected into system processes like notepad.exe, svchost.exe, and vbc.exe.
+
+Input Capture (T1056)
+
+Collection, Credential Access
+
+Netwire can perform keylogging.
+
+Process Discovery (T1057)
+
+Discovery
+
+Netwire can discover and kill processes on controlled systems.
+
+This is performed without external commands.
+
+Command-Line Interface (T1059)
+
+Execution
+
+Netwire can issue commands using cmd.exe and sh processes.
+
+Registry Run Keys / Startup Folder (T1060)
+
+Persistence
+
+Netwire creates a Registry start-up entry to establish persistence.
+
+The name may be configured by a user at the time of binary compilation.
+
+Run key and Startup tests from Atomic Red Team
+
+Local Job Scheduling (T1168)
+
+Persistence, Execution
+
+Netwire contains the ability to persist via cron jobs.
+
+Cron tests from Atomic Red Team
+
+Credentials in Files (T1081)
+
+Credential Access
+
+Netwire can retrieve passwords from messaging and mail client applications.
+
+Supported applications are Windows Live Messenger, Pidgin, Mozilla Thunderbird, and Microsoft Outlook.
+
+System Information Discovery (T1082)
+
+Discovery
+
+Netwire can discover and collect victim system information
+
+Connection Proxy (T1090)
+
+Command And Control, Defense Evasion
+
+Netwire can proxy network traffic for a system.
+
+Process Hollowing (T1093)
+
+Defense Evasion
+
+Some campaigns using Netwire have used process hollowing to shield execution from scrutiny.
+
+Remote File Copy (T1105)
+
+Command And Control, Lateral Movement
+
+Netwire contains the ability to transfer files to remote systems.
+
+Remote File Copy tests from Atomic Red Team
+
+Modify Registry (T1112)
+
+Defense Evasion
+
+Netwire stores its configuration within the Windows Registry.
+
+The configuration information is usually stored under HKCU:\Software\Netwire
+
+Modify Registry tests from Atomic Red Team
+
+Screen Capture (T1113)
+
+Collection
+
+NETWIRE can capture the victim’s screen.
+
+Code Signing (T1116)
+
+Defense Evasion
+
+The Netwire client has been signed by fake and invalid digital certificates.
+
+Launch Agent (T1159)
+
+Defense Evasion
+
+Netwire contains macOS startup options for Launch Agents.
+
+The name may be configured by a user at the time of binary compilation.
+
+Launch Agent tests from Atomic Red Team
+
+Login Item (T1162)
+
+Persistence
+
+Netwire contains macOS startup options for Login Items.
+
+The name may be configured by a user at the time of binary compilation.
+
+ 
+
+Credentials from Web Browsers (T1503)
+
+Credential Access
+
+Netwire can retrieve passwords from numerous web browsers.
+
+Supported browsers are Mozilla Firefox, Internet Explorer, Opera, Chromium, and SeaMonkey.
+"

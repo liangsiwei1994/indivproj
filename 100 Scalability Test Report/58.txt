@@ -1,0 +1,59 @@
+"BLINDINGCAN Remote Access Trojan
+First seen in early August, BLINDINGCAN is an advanced remote access trojan developed by the HIDDEN COBRA APT group. It is able to edit or download files and act as a dropper for secondary payloads.
+
+Threat ID:	CC-3603
+Category:	Trojan
+Threat Severity:	Medium
+Threat Vector:	Email spam, Phishing, Spear phishing
+Published:	20 August 2020 12:00 AM
+Report a cyber attack: call 0300 303 5222 or email carecert@nhsdigital.nhs.uk
+Page contents
+Summary
+Affected platforms
+Remediation advice
+Indicators of compromise
+Definitive source of threat updates
+Summary
+
+First seen in early August, BLINDINGCAN is an advanced remote access trojan developed by the HIDDEN COBRA APT group. It is able to edit or download files and act as a dropper for secondary payloads.
+
+Affected platforms
+
+The following platforms are known to be affected:
+
+Versions: all
+Microsoft Windows
+
+Threat details
+
+Introduction
+BLINDINGCAN is a newly observed remote access trojan created by the HIDDEN COBRA advanced persistent threat group for use in attacks against defence, engineering, and government organisations in Western Europe and the USA.
+
+Delivery
+As with a number of other HIDDEN COBRA developed tools, BLINDINGCAN is initially delivered via Microsoft Office attachments distributed in sophisticated spear-phishing campaigns. These attachments contain a number of XML directory files which, when the file is opened, connect to a delivery URL to download a preliminary DLL file.
+
+This DLL file then unpacks and decodes an embedded secondary DLL file using a hard-coded XOR key, before executing it. Upon execution, the secondary DLL decrypts two further embedded DLL files, containing BLINDINGCAN proper, using a hard-coded AES key before decoding and executing them.
+
+Activities
+Once installed, BLINDINGCAN will collect user and system information before sending it to a command and control server using HTTP POST requests. By default, BLINDINGCAN is able to:
+
+enumerate connected drives
+create and terminate processes
+search, edit, execute, or transfer files
+alter file and directory timestamps
+BLINDINGCAN is also able to remove all indicators or artifacts associated with it's operation from an infected system.
+
+Remediation advice
+
+To prevent and detect an infection, NHS Digital advises that:
+
+Secure configurations are applied to all devices.
+Security updates are applied at the earliest opportunity.
+Tamper protection settings in security products are enabled where available.
+Obsolete platforms are segregated from the rest of the network.
+IT usage policies are reinforced by regular training to ensure all users know not to open unsolicited links or attachments.
+Multi-factor authentication (MFA) and lockout policies are used where practicable, especially for administrative accounts.
+Administrative accounts are only used for necessary purposes.
+Remote administration services use strongly encrypted protocols and only accept connections from authorised users or locations.
+Systems are continuously monitored, and unusual activity is investigated, so that a compromise of the network can be detected as early as possible.
+Please note that the NCSC maintains guidance for securely configuring a wide range of end user device (EUD) platforms. For further details refer to their end user device security guidance pages."

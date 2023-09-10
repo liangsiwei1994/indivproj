@@ -1,0 +1,303 @@
+"Threat Analysis Unit
+VMware Carbon Black TAU Threat Analysis: The Evolution of Lazarus
+April 16, 2020 25 min read
+Share on:
+Share on Twitter
+Share on LinkedIn
+Share on Facebook
+Share on Reddit
+Email this post
+Copy Link
+On February 14, 2020 the U.S. Department of Homeland Security (DHS) released a Malware Analysis Report (MAR-10271944-1.v1) which provided information about a trojan they referred to as HotCroissant. DHS attributed the trojan to a threat group based in North Korea, often referred to as Hidden Cobra. This group, also known as the Lazarus Group, continues to be very active. Over the previous year they’ve targeted organizations in South Korea, Russia, and the United States with motives that range from espionage and sabotage to attacks purely for financial gain. At first glance HotCroissant might appear as a new tool in the Lazarus Group’s tool box but as we’ll see it holds many similarities to an earlier trojan they’ve used before.
+
+HotCroissant
+Overview
+The HotCroissant trojan is a fairly straightforward remote access trojan (RAT). On startup, it decodes the address of its C2 server and then attempts to connect to it. If it is successful then it will send out basic host information to the C2 and await further commands. The HotCroissant sample shared in the DHS Malware Analysis Report had a compilation timestamp of 2019-07-25 15:38:54. During this research we were able to find samples with compilation timestamps dating back to 2018-10-26 15:38:22 as well as a newer sample with a compilation timestamp of 2019-07-29 07:08:01.
+
+HotCroissant samples with a compilation timestamp older than the one listed in the DHS report are all almost identical. The main difference in samples is the C2 server IP address. There are a few interesting differences that are worth mentioning. One of the samples appeared to have the basic string obfuscation disabled and in turn the C2 server IP address is easily identifiable. Another of the samples had a C2 server IP address in the reserved private IP address range along with a few additional debug messages. This appears to be a testing version of the trojan.
+
+The most recent HotCroissant sample found, while almost functionally equivalent to the DHS sample, is far more obfuscated. First, the sample is UPX packed. Next, in addition to the basic string obfuscation of earlier samples, this newer sample has a second string obfuscation technique used. Some of the strings are RC4 encrypted with the key ANONYBR and then base64 encoded. FInally, the newest sample uses dynamic API lookups to attempt to make static disassembly harder to understand. The most recent sample does have some new functionality as well. When the trojan starts up it will attempt to install a scheduled task with the name of “Java Maintenance64” to keep itself running. There are also a handful of new C2 commands not seen in earlier versions.
+
+C2 protocol
+The C2 protocol is fairly robust. Requests from the C2 server and responses from the trojan make use of a specific command format as seen below:
+
+type Command struct {
+
+    Opcode uint32
+
+    TxnID  int32
+
+    Opt1   int32
+
+    Opt2   int32
+
+    Size   uint32
+
+    Data   []byte
+
+}
+
+The Opcode field indicates the action the C2 server is requesting or information the trojan is sending back to the C2. TxnID is a transaction number sent from the C2 server that is echoed back in some responses from the trojan. Opt1 and Opt2 get used in commands as additional parameters. The Size field indicates how many bytes are expected in the Data field. The Data field is used for string parameters for the commands to be executed.
+
+The entire command structure gets compressed with zlib and then encrypted using a custom stream cipher. This encoded information then gets an additional header added and sent across the network. The encoded structure can be seen below:
+
+type EncodedCommand struct {
+
+    Size        uint32
+
+    DecodedSize uint32
+
+    Data        []byte
+
+}
+
+A full list of Opcodes and command descriptions can be found at the end of this document.
+
+Rifdoor
+Overview
+According to an AhnLab report, Rifdoor dates back to a 2015 attack on exhibitors in the Seoul International Aerospace & Defense Exhibition (ADEX). It was sent to exhibitors in an email with an Excel or Word document containing macros, pretending to be from the organizer of the event. This trojan continued to be seen in attacks well into 2016.
+
+Rifdoor is another basic remote access trojan. On first launch the trojan will make a copy of itself, adding four additional bytes to the end of the file. This changed version is then saved as C:\ProgramData\Initech\Initech.exe. A new registry entry is created at HKEY_CURRENT_USERS\Software\Microsoft\Windows\CurrentVersion\Run\Graphics with a value of “C:\ProgramData\Initech\Initech.exe” /run. When the trojan is launched with the /run flag it will decode its C2 server IP address and attempt to connect to it. If it is successful then it will send out basic host information and await further commands.
+
+C2 protocol
+The C2 protocol is a string based request and response type. Commands like “$exec <filename>” are sent to the trojan and the trojan sends back responses. The requests sent over the network have some additional header information included as seen in the structure below:
+
+type Command struct {
+
+    Opcode   uint32
+
+    Checksum int32
+
+    TxnID    int32
+
+    Size     uint32
+
+    Data     []byte
+
+}
+
+The Opcode field indicates the type of request. The Checksum is calculated based on host system information. TxnID is a transaction number sent from the C2 server that is echoed back in some responses from the trojan. The Size field indicates how many bytes are expected in the Data field. The Data field contains the string commands or the responses. The Data field is encrypted using a custom stream cipher.
+
+A full list of commands can be found at the end of this document.
+
+Similarities
+Even though the Rifdoor and HotCroissant campaigns are separated by more than two years there are numerous similarities in the code of the two trojans.
+
+String obfuscation
+As mentioned previously, both HotCroissant and Rifdoor have a form of basic string obfuscation. If we take a look at when the trojans decode their C2 server IP addresses we can see that they both use the same technique, a simple one byte XOR with the value 0xF.
+
+
+
+Figure 1: HotCroissant string decoding
+
+
+
+Figure 2: Rifdoor string decoding
+
+Host information collection
+After decoding their C2 server IP addresses, from obfuscated strings, both trojans will attempt to collect host information and send it to the C2 server. The trojans do not collect identical host information. However, as can be seen in the functions collecting the Windows product name below, some functions are almost identical, including the use of the same obfuscated strings.
+
+
+
+Figure 3: HotCroissant product name collection
+
+
+
+Figure 4: Rifdoor product name collection
+
+Network sockets
+Every application using sockets for network communication will have similar API calls in order to connect to a server. What is interesting about the socket code below is that we see both trojans setting the same socket options. Both call setsockopt to enable SO_KEEPALIVE and then call WSAIoctl to set the keep alive time and interval to the same values of 180000 and 5000 respectively.
+
+
+
+Figure 5: HotCroissant server connect
+
+
+
+Figure 6: Rifdoor server connect
+
+Network data encryption
+Both trojans encrypt the data that they send to the C2 servers. While the encryption is not identical, they do have similarities. Both encryption algorithms are, at their core, a stream cipher. Seed values are used to generate a keystream the same length as the data to be encrypted. This keystream is then XOR’ed with the data. Both algorithms make use of 3 different 32-bit seed values for the keystream. The difference lies only with how the keystream is derived.
+
+
+
+Figure 7: HotCroissant stream cipher
+
+
+
+Figure 8: Rifdoor stream cipher
+
+C2 protocol
+While the commands that each trojan understands are different there are some similarities in the C2 protocol that are worth mentioning. Both protocols make use of a 32-bit Opcode field to identify what type of request should be processed. In the case of Rifdoor there is only a very limited number of opcodes. Both trojans also support a TxnID field. This field is included in requests and will be echoed back to the C2 server in responses. This appears to be a way for the C2 server to keep track of requests and responses.
+
+Conclusion
+Whether HotCroissant and Rifdoor are truly the same malware family or not is hard to say with certainty. It is safe to say that they both share sections of code as well as similarities in their network protocol. More importantly, HotCroissant shows a clear evolution of the sophistication of the Lazarus Group’s toolset. With Rifdoor we saw a basic trojan that supported three or four different commands. With HotCroissant there are over twenty different commands that the trojan understands, including more sophisticated ones like real time screen viewing. With the most recent HotCroissant sample we see the Lazarus Group working to make detection more complicated by using additional obfuscation, dynamic API usage and packers. One thing is certain, they show no signs of slowing down, and we will continue to monitor their activity to provide insight and information to our customers.
+
+MITRE ATT&CK TIDs
+TID	Tactic	Description
+T1140	Defense Evasion	Deobfuscate/Decode Files or Information
+T1082	Discovery	System Information Discovery
+T1033	Discovery	System Owner/User Discovery
+T1005	Collection	Data from Local System
+T1113	Collection	Screen Capture
+T1059	Execution	Command-Line Interface
+T1094	Command And Control	Custom Command and Control Protocol
+T1024	Command And Control	Custom Cryptographic Protocol
+T1132	Command And Control	Data Encoding
+T1065	Command And Control	Uncommonly Used Port
+ 
+
+Indicators of Compromise (IOCs)
+Indicator	Type	Context
+a9915977c810fb2d61be8ff9d177de4d10bd3b24bdcbb3bb8ab73bcfdc501995	SHA256	Rifdoor 32-bit executable
+57d1df9f6c079e67e883a25cfbb124d33812b5fcdb6288977c4b8ebc1c3350de	SHA256	Rifdoor 32-bit executable
+0a0c09f81a3fac2af99fab077e8c81a6674adc190a1077b04e2956f1968aeff3	SHA256	Rifdoor 32-bit executable
+c9455e218220e81670ddd3c534011a68863ca9e09ab8215cc72da543ca910b81	SHA256	Rifdoor 32-bit executable
+192.99.223.115	TCP/80
+TCP/443
+
+Rifdoor C2
+165.194.123.67	TCP/8008	Rifdoor C2
+111.68.7.74	TCP/443	Rifdoor C2
+7ec13c5258e4b3455f2e8af1c55ac74de6195b837235b58bc32f95dd6f25370c	SHA256	HotCroissant 32-bit executable
+0ea57d676fe7bb7f75387becffffbd7e6037151e581389d5b864270b296bb765	SHA256	HotCroissant 32-bit executable
+b689815a0c97414e0bba0f6cf72029691c8254041e105ed69f6f921d49e88a4d	SHA256	HotCroissant 32-bit executable
+8ee7da59f68c691c9eca1ac70ff03155ed07808c7a66dee49886b51a59e00085	SHA256	HotCroissant 32-bit executable
+315c06bd8c75f99722fd014b4fb4bd8934049cde09afead9b46bddf4cdd63171	SHA256	HotCroissant 32-bit executable
+172.93.110.85	TCP/80	HotCroissant C2
+176.31.15.195	TCP/8445	HotCroissant C2
+94.177.123.138	TCP/8088	HotCroissant C2
+51.254.60.208	TCP/443	HotCroissant C2
+ 
+
+Rifdoor C2 Commands
+Opcode	Name	Description
+0x9e2	Beacon	Sent when Rifdoor starts up. The command data contains basic host information like IP Address, User Name and Windows version.
+0x4e3a	CommandRequest	The request data is text based with spaces separating specific commands and arguments. The following keywords are understood:
+ 
+
+$interval <minutes>
+
+ 
+
+$download <url> <filename>
+
+ 
+
+$exec <filename>
+
+ 
+
+$downloadexec <url> <filename>
+
+ 
+
+By default if the command data doesn’t start with any of the previous keywords then the string will simply be sent to a command prompt for execution.
+
+0xa021	CommandResponse	The response data is also text based. Response strings are usually surrounded with carriage return and line feeds.
+0x1055	EndRequest	Indicates that the client or server is done sending requests or responses.
+ 
+
+HotCroissant C2 Commands
+Opcode	Name	Description
+0x7c5	ShutdownNow	Immediately calls exit() (Only seen in sample b689815a0c97414e0bba0f6cf72029691c8254041e105ed69f6f921d49e88a4d)
+0x7c7	KeepAlive	Prevents connection from closing due to time out.
+0x7c8	Beacon	Send victim host information to the C2 server. This is sent on the first connection to the C2 server.
+0x7d2	ProcessList	Retrieve a list of running processes.
+0x7d3	ProcessKill	Kill a process on the victim machine. The Data value is the process name to terminate.
+0x7d4	WindowList	List names of all open windows.
+0x7d7	WindowClose	Close an open window. The Data value is the window name to close. Note: WindowList must be called first in order for this to work.
+0x7da	DriveList	Retrieve a list of drives and what type of drive they are.
+0x7dc	DirectoryList	Retrieve a list of files in a given directory. The Data value is the directory.
+0x7de	FileCopy	Copy a file. The Data value specifies the source and destination separated by a ‘|’.
+0x7e0	FileDelete	Delete a file. The Data value specifies the file to delete.
+0x7e2	FileMove	Move a file. The Data value specifies the source and destination separated by a ‘|’
+0x7e4	TransferData	After initiating a download or upload, file data is transferred in the Data field in 0x3A70 sized chunks.
+0x7e5	TransferComplete	Sent after all file data has been sent.
+0x7e6	DownloadFile	Start the download of a file from the victim machine to the C2 server. The Data value contains two strings separated by a ‘|’ character. The first string is a job name and the second string is the file to download.
+0x7e7	DownloadStatus	Sent after a download is initiated and after each chunk of data. The Data value contains text providing the status of the download. For example: “0 Bytes / 79760 Bytes”.
+0x7e8	FileFind	Recursively search a directory. The Data value contains two strings separated by a ‘|’ character. The first string is the search string. The second string is the directory to search.
+0x7ea	Execute	Use ShellExecuteA to open an application. Opt1 indicates if the window should be hidden or not. Data contains the file to execute.
+0x7ed	UploadFile	Start the upload of a file from the C2 server to the victim machine. A 0x7ed response is sent back to the C2 server with Opt1 indicating the file handle to use in the following TransferData and TransferComplete requests.
+0x7ee	DownloadDirectory	Download all the files in a given directory. The Data value indicates the directory to download.
+0x7ef	DownloadDirectoryComplete	Sent from the victim machine to the C2 after each file in a directory has been transferred.
+0x7f0	DownloadFileOffset	Used to resume downloading a file from a specific offset. Opt1 is the file handle and Opt2 is the file offset. (Only seen in sample 315c06bd8c75f99722fd014b4fb4bd8934049cde09afead9b46bddf4cdd63171)
+0x802	ScreenCaptureStart	Start capturing the victim machine’s screen. A 0x802 response is sent back containing BITMAPINFO indicating the dimensions and color of the screen.
+0x803	ScreenCaptureData	Victim machine sends the initial screen capture image back in 0x3a70 chunks to the C2 server.
+0x804	ScreenCaptureStop	Stop capturing the victim machine’s screen.
+0x805	ScreenCaptureDataUpdate	Victim machine sends screen capture updates back to the C2 server.
+0x820	ServiceList	Retrieve a list of services.
+0x821	ServiceStart	Start a service. The Data value is the service name to start.
+0x822	ServiceStop	Stop a service. The Data value is the service name to start.
+0xbc2	AppList	Retrieve a list of apps from the “SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths” registry key.
+0xfa1	CmdShellStart	Start a cmd shell on the victim machine.
+0xfa2	CmdShellData	The Data value contains the string to execute in the started cmd shell. A 0xfa2 response is sent back with the output.
+0xfa3	CmdShellStop	Stop the cmd shell running on the victim machine.
+0x1389	Uninstall	Attempts to clean up any installed files and then delete itself from the victim’s machine. (Only seen in sample 315c06bd8c75f99722fd014b4fb4bd8934049cde09afead9b46bddf4cdd63171)
+0x138a	Shutdown	Sets a flag instructing the malware to gracefully shut down. (Only seen in sample 315c06bd8c75f99722fd014b4fb4bd8934049cde09afead9b46bddf4cdd63171)
+0x138b	DownloadStop	Stop the download of a given file. Opt2 has to be set on the initial download request and then this command can be sent to stop the download. (Only seen in sample 315c06bd8c75f99722fd014b4fb4bd8934049cde09afead9b46bddf4cdd63171)
+ 
+
+Yara Rule
+rule lazarus_hotcroissant_2020_Q1 : TAU APT Lazarus
+
+{
+
+    meta:
+
+        author = “CarbonBlack Threat Research” // sknight
+
+        date = “2020-Mar-25”
+
+        Validity = 10
+
+        severity = 10
+
+        Jira = “TR-4456”
+
+        TID = “T1140, T1082, T1033, T1005, T1113, T1094, T1024, T1132, T1065”
+
+        description = “Lazarus HotCroissant backdoor”
+
+        link = “https://www.us-cert.gov/ncas/analysis-reports/ar20-045d”
+
+        rule_version = 1
+
+        yara_version = “3.11.0”
+
+        Confidence = “Prod”
+
+        Priority = “Medium”
+
+        TLP = “White”
+
+        exemplar_hashes = “8ee7da59f68c691c9eca1ac70ff03155ed07808c7a66dee49886b51a59e00085, 7ec13c5258e4b3455f2e8af1c55ac74de6195b837235b58bc32f95dd6f25370c”
+
+ 
+
+    strings:
+
+        // Crypto keys
+
+        $b1 = { 8b d6 b8 00 [1-6] 17 [1-6] 29 70 49 02 }
+
+ 
+
+        // Crypto algorithm
+
+        $b2 = { 8A 1C 3E 32 DA 32 D8 32 D9 88 1C 3E 8A D8 32 D9 22 DA 8B 55 FC 8D 3C D5 00 00 00 00 33 FA 81 E7 F8 07 00 00 C1 E7 14 C1 EA 08 0B D7 8D 3C 00 33 F8 22 C8 C1 E7 04 33 F8 32 CB 8B D8 83 E7 80 C1 E3 07 33 FB C1 E7 11 C1 E8 08 }
+
+ 
+
+    condition:
+
+        uint16(0) == 0x5A4D and 
+
+        uint32(uint32(0x3C)) == 0x00004550 and
+
+        filesize < 200KB and
+
+        any of ($b*)
+
+}
+"

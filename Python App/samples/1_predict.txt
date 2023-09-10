@@ -1,0 +1,80 @@
+POLONIUM was observed creating and using legitimate OneDrive accounts, then utilizing those accounts as C2 to execute part of their attack operation.
+creating and using legitimate OneDrive accounts
+POLONIUM was observed creating and using legitimate OneDrive accounts, then utilizing those accounts as C2 to execute part of their attack operation.
+utilizing those accounts as C2 to execute part of their attack operation
+In at least one case, POLONIUM’s compromise of an IT company was used to target a downstream aviation company and law firm in a supply chain attack that relied on service provider credentials to gain access to the targeted networks.
+relied on service provider credentials to gain access to the targeted networks
+Use of OneDrive for C2:  MSTIC has observed both POLONIUM and DEV-0133 (aka Lyceum) using cloud services, including OneDrive, for data exfiltration and command and control.
+using cloud services , including OneDrive , for data exfiltration and command and control
+POLONIUM has been observed deploying a series of custom implants that utilize cloud services for command and control as well as data exfiltration.
+series of custom implants that utilize cloud services for command and control as well as data exfiltration
+MSTIC has observed implants connecting to POLONIUM-owned accounts in OneDrive and Dropbox.
+implants connecting to POLONIUM-owned accounts in OneDrive and Dropbox
+The CreepyDrive implant utilizes a POLONIUM-owned OneDrive storage account for command and control.
+utilizes a POLONIUM-owned OneDrive storage account for command and control
+The implant provides basic functionality of allowing the threat actor to upload stolen files and download files to run.
+allowing the threat actor to upload stolen files and download files to run
+The threat actor incorporated a refresh token within the implant.
+incorporated a refresh token within the implant
+In this instance, the protection settings tied to the OneDrive account are fully controlled by the threat actor, allowing them to disable protections that prevent the theft of the token and client secrets.
+protection settings tied to the OneDrive account
+In this instance, the protection settings tied to the OneDrive account are fully controlled by the threat actor, allowing them to disable protections that prevent the theft of the token and client secrets.
+disable protections that prevent the theft of the token and client secrets
+As the threat actor is in full control of all secrets and key material associated with the account, their sign-in activity looks like legitimate customer behavior and is thus challenging to detect.
+control of all secrets and key material associated with
+This token and client secret are transmitted in the body of request to a legitimate Microsoft endpoint to generate an OAuth token:
+client secret are transmitted in the body of request to a legitimate Microsoft endpoint to generate an OAuth token
+This request provides the requisite OAuth token for the implant to interact with the threat actor-owned OneDrive account.
+the implant to interact with the threat actor-owned OneDrive account
+Using this OAuth token, the implant makes a request to the following Microsoft Graph API endpoint to access the file data.txt:
+makes a request to the following Microsoft Graph API endpoint to access the
+The file data.txt acts as the primary tasking mechanism for the implant, providing three branches of execution.
+acts as the primary tasking mechanism for the implant , providing three branches of execution
+This response payload also contains two additional elements: a local file path to upload, and what is likely a threat actor-defined remote file name to upload the local file into.
+local file path to upload
+This response payload also contains two additional elements: a local file path to upload, and what is likely a threat actor-defined remote file name to upload the local file into.
+what is likely a threat actor-defined remote file name to upload the local file into
+This response payload contains a file name to download from the threat actor-owned OneDrive account.
+contains a file name to download from the threat actor-owned OneDrive account
+The response payload can contain either an array of commands to execute or file paths to files previously downloaded by the implant.
+response payload can contain either an array of commands to execute or file paths to files previously downloaded by the implant
+The threat actor can also provide a mixture of individual commands and file paths.
+provide a mixture of individual commands and file paths
+Each value from the array is passed individually into the below custom function, which uses the Invoke-Expression cmdlet to run commands:
+Each value from the array is passed individually
+Each value from the array is passed individually into the below custom function, which uses the Invoke-Expression cmdlet to run commands:
+uses the Invoke-Expression cmdlet to run commands
+The output of each executed command is aggregated and then written back to the following location in the threat actor-owned OneDrive account:
+output of each executed command is aggregated and then written back to the following location in the threat actor-owned OneDrive account
+Finally, the CreepyDrive implant sleeps, re-executing in a loop until the process is terminated.
+CreepyDrive implant sleeps , re-executing in a loop until the process is terminated
+The code below demonstrates how the CreepySnail PowerShell implant, once deployed on a target network, attempts to authenticate using stolen credentials and connect to POLONIUM C2 for further actions on objectives, such as data exfiltration or further abuse as C2.
+a target network , attempts to authenticate using stolen credentials and connect to POLONIUM C2 for further actions on objectives
+POLONIUM has also been observed dropping a secondary payload via their OneDrive implant.
+dropping a secondary payload via their OneDrive implant
+POLONIUM used a common SSH tool for automating interactive sign-ins called plink to set up a redundant tunnel from the victim environment to the attacker-controlled infrastructure.
+automating interactive sign-ins called plink to set up a redundant tunnel from the victim environment to the attacker-controlled infrastructure
+Block in-bound traffic from IPs specified in the “Indicators of compromise” table.
+Block in-bound traffic from IPs specified in the “ Indicators of compromise ” table
+App made numerous searches and edits in OneDrive
+made numerous searches and edits in OneDrive
+App governance, an add-on to Microsoft Defender for Cloud Apps, detects malicious OAuth applications that make numerous searches and edits in OneDrive.
+detects malicious OAuth applications that make numerous searches and edits in OneDrive
+This query identifies POLONIUM network IOCs within available Azure Sentinel network logging:
+identifies POLONIUM network IOCs within available Azure Sentinel network logging
+The CreepySnail tool utilizes static URI parameters that can be detected using the following query:
+utilizes static URI parameters that can be detected
+Detect Base64-encoded/transmitted machine usernames or IP addresses
+Detect Base64-encoded/transmitted machine usernames or IP addresses
+CreepySnail also utilizes Base64-encoded parameters to transmit information from the victim to threat actor.
+utilizes Base64-encoded parameters to transmit information from the victim to threat actor
+The following queries detect machine usernames or IP addresses (based on Microsoft Defender for Endpoint logging) being transmitted under Base64 encoding in a web request:
+being transmitted under Base64 encoding in a web request
+Detect POLONIUM requests to predictable OneDrive file paths
+Detect POLONIUM requests to predictable OneDrive file paths
+The OneDrive capability that POLONIUM utilizes makes requests to predictable OneDrive file paths to access various folders and files.
+makes requests to predictable OneDrive file paths to access various folders and files
+Detect sequence of request events related to unique CreepyDrive re-authentication attempts
+Detect sequence of request events related to unique CreepyDrive re-authentication attempts
+The CreepyDrive implant makes a predictable sequence of requests to Microsoft authentication servers and OneDrive that can be detected using the following query:
+makes a predictable sequence of requests to Microsoft authentication servers and OneDrive

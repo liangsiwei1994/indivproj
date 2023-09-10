@@ -1,0 +1,216 @@
+Technical Details
+Note: This advisory uses the MITRE ATT&CK® for Enterprise framework, version 12. See MITRE ATT&CK for Enterprise for all referenced tactics and techniques.
+
+As of November 2022, Hive ransomware actors have victimized over 1,300 companies worldwide, receiving approximately US$100 million in ransom payments, according to FBI information. Hive ransomware follows the ransomware-as-a-service (RaaS) model in which developers create, maintain, and update the malware, and affiliates conduct the ransomware attacks. From June 2021 through at least November 2022, threat actors have used Hive ransomware to target a wide range of businesses and critical infrastructure sectors, including Government Facilities, Communications, Critical Manufacturing, Information Technology, and especially Healthcare and Public Health (HPH).
+
+The method of initial intrusion will depend on which affiliate targets the network. Hive actors have gained initial access to victim networks by using single factor logins via Remote Desktop Protocol (RDP), virtual private networks (VPNs), and other remote network connection protocols. In some cases, Hive actors have bypassed multifactor authentication (MFA) and gained access to FortiOS servers by exploiting Common Vulnerabilities and Exposures (CVE) CVE-2020-12812. This vulnerability enables a malicious cyber actor to log in without a prompt for the user’s second authentication factor (FortiToken) when the actor changes the case of the username.
+
+Hive actors have also gained initial access to victim networks by distributing phishing emails with malicious attachments and by exploiting the following vulnerabilities against Microsoft Exchange servers:
+
+CVE-2021-31207 - Microsoft Exchange Server Security Feature Bypass Vulnerability
+CVE-2021-34473 - Microsoft Exchange Server Remote Code Execution Vulnerability
+CVE-2021-34523 - Microsoft Exchange Server Privilege Escalation Vulnerability
+After gaining access, Hive ransomware attempts to evade detention by executing processes to:
+
+Identify processes related to backups, antivirus/anti-spyware, and file copying and then terminating those processes to facilitate file encryption.
+Stop the volume shadow copy services and remove all existing shadow copies via vssadmin on command line or via PowerShell.
+Delete Windows event logs, specifically the System, Security and Application logs.
+Prior to encryption, Hive ransomware removes virus definitions and disables all portions of Windows Defender and other common antivirus programs in the system registry.
+
+Hive actors exfiltrate data likely using a combination of Rclone and the cloud storage service Mega.nz. In addition to its capabilities against the Microsoft Windows operating system, Hive ransomware has known variants for Linux, VMware ESXi, and FreeBSD.
+
+During the encryption process, a file named *.key (previously *.key.*) is created in the root directory (C:\ or /root/). Required for decryption, this key file only exists on the machine where it was created and cannot be reproduced. The ransom note, HOW_TO_DECRYPT.txt is dropped into each affected directory and states the *.key file cannot be modified, renamed, or deleted, otherwise the encrypted files cannot be recovered. The ransom note contains a “sales department” .onion link accessible through a TOR browser, enabling victim organizations to contact the actors through a live chat panel to discuss payment for their files. However, some victims reported receiving phone calls or emails from Hive actors directly to discuss payment.
+
+The ransom note also threatens victims that a public disclosure or leak site accessible on the TOR site, “HiveLeaks”, contains data exfiltrated from victim organizations who do not pay the ransom demand (see figure 1 below). Additionally, Hive actors have used anonymous file sharing sites to disclose exfiltrated data (see table 1 below).
+
+
+Figure 1: Sample Hive Ransom Note
+ 
+
+Table 1: Anonymous File Sharing Sites Used to Disclose Data
+https://anonfiles[.]com
+
+https://mega[.]nz
+
+https://send.exploit[.]in
+
+https://ufile[.]io
+
+https://www.sendspace[.]com
+
+https://privatlab[.]net
+
+https://privatlab[.]com
+
+ 
+
+Once the victim organization contacts Hive actors on the live chat panel, Hive actors communicate the ransom amount and the payment deadline. Hive actors negotiate ransom demands in U.S. dollars, with initial amounts ranging from several thousand to millions of dollars. Hive actors demand payment in Bitcoin.
+
+Hive actors have been known to reinfect—with either Hive ransomware or another ransomware variant—the networks of victim organizations who have restored their network without making a ransom payment.
+
+Indicators of Compromise
+Threat actors have leveraged the following IOCs during Hive ransomware compromises. Note: Some of these indicators are legitimate applications that Hive threat actors used to aid in further malicious exploitation. FBI, CISA, and HHS recommend removing any application not deemed necessary for day-to-day operations. See tables 2–3 below for IOCs obtained from FBI threat response investigations as recently as November 2022.
+
+Table 2: Known IOCs as of November 2022
+Known IOCs - Files
+
+HOW_TO_DECRYPT.txt typically in directories with encrypted files
+
+*.key typically in the root directory, i.e., C:\ or /root
+
+hive.bat
+
+shadow.bat
+
+asq.r77vh0[.]pw - Server hosted malicious HTA file
+
+asq.d6shiiwz[.]pw - Server referenced in malicious regsvr32 execution
+
+asq.swhw71un[.]pw - Server hosted malicious HTA file
+
+asd.s7610rir[.]pw - Server hosted malicious HTA file
+
+Windows_x64_encrypt.dll
+
+Windows_x64_encrypt.exe
+
+Windows_x32_encrypt.dll
+
+Windows_x32_encrypt.exe
+
+Linux_encrypt
+
+Esxi_encrypt
+
+Known IOCs – Events
+
+System, Security and Application Windows event logs wiped
+
+Microsoft Windows Defender AntiSpyware Protection disabled
+
+Microsoft Windows Defender AntiVirus Protection disabled
+
+Volume shadow copies deleted
+
+Normal boot process prevented
+
+Known IOCs – Logged Processes
+
+wevtutil.exe cl system
+
+wevtutil.exe cl security
+
+wevtutil.exe cl application
+
+vssadmin.exe delete shadows /all /quiet
+
+wmic.exe SHADOWCOPY /nointeractive
+
+wmic.exe shadowcopy delete
+
+bcdedit.exe /set {default} bootstatuspolicy ignoreallfailures
+
+bcdedit.exe /set {default} recoveryenabled no
+
+ 
+
+Table 3: Potential IOC IP Addresses as of November 2022
+Note: Some of these observed IP addresses are more than a year old. FBI and CISA recommend vetting or investigating these IP addresses prior to taking forward-looking action like blocking.
+Potential IOC IP Addresses for Compromise or Exfil:
+
+84.32.188[.]57
+
+84.32.188[.]238
+
+93.115.26[.]251
+
+185.8.105[.]67
+
+181.231.81[.]239
+
+185.8.105[.]112
+
+186.111.136[.]37
+
+192.53.123[.]202
+
+158.69.36[.]149
+
+46.166.161[.]123
+
+108.62.118[.]190
+
+46.166.161[.]93
+
+185.247.71[.]106
+
+46.166.162[.]125
+
+5.61.37[.]207
+
+46.166.162[.]96
+
+185.8.105[.]103
+
+46.166.169[.]34
+
+5.199.162[.]220
+
+93.115.25[.]139
+
+5.199.162[.]229
+
+93.115.27[.]148
+
+89.147.109[.]208
+
+83.97.20[.]81
+
+5.61.37[.]207
+
+5.199.162[.]220
+
+5.199.162[.]229;
+
+46.166.161[.]93
+
+46.166.161[.]123;
+
+46.166.162[.]96
+
+46.166.162[.]125
+
+46.166.169[.]34
+
+83.97.20[.]81
+
+84.32.188[.]238
+
+84.32.188[.]57
+
+89.147.109[.]208
+
+93.115.25[.]139;
+
+93.115.26[.]251
+
+93.115.27[.]148
+
+108.62.118[.]190
+
+158.69.36[.]149/span>
+
+181.231.81[.]239
+
+185.8.105[.]67
+
+185.8.105[.]103
+
+185.8.105[.]112
+
+185.247.71[.]106
+
+186.111.136[.]37
+
+192.53.123[.]202
+

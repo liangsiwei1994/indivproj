@@ -1,5 +1,3 @@
-# ignore all .txt files
-*.txt
 
 # ignore test files
 **/test_explored/

