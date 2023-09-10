@@ -6,7 +6,7 @@
 https://github.com/aiforsec/LADDER/blob/main/notebooks/attack-pattern-extraction.ipynb
 
 ## Running the tests
-First, create a folder named "models", and download the models of Alam et al. to use from: 
+First, create a folder named "models", and download the models by Alam et al. [1] to use from: 
 1. https://drive.google.com/uc?id=1yYRNoV4SFwcS1HAgrwxNQftqQVnaXLGo (for entity_ext.pt)
 2. https://drive.google.com/uc?id=15YJgo4iqfQ7zWoHLBOnHOW4BV3hsGENY (for sent_cls.pt)
 
