@@ -18,8 +18,9 @@ Thirdly, run the script to extract the attack phrases and sentence <br>
 Lastly, run the script to identify MITRE techniques <br>
 `python <path to part2original_atkBert_append162b2c2_46_regex.py> --sentence_file=<path to the .txt file of --save_path when running the script to extract phrases and sentences> > <Any .txt file to print the results>`
 
-*Replace the `inference_originalFilter6_sentence_phrase_regex_YARA_temp.py` with `inference_original.py`, and `part2original_atkBert_append162b2c2_46_regex.py` with `part2original.py` to run the original TTPClassifier.
-*As the final experiment contains similar functions to the python app, please look at the python app python files to see which code was added, adapted, or taken from Alam et al. [1]
+*Replace the `inference_originalFilter6_sentence_phrase_regex_YARA_temp.py` with `inference_original.py`, and `part2original_atkBert_append162b2c2_46_regex.py` with `part2original.py` to run the original TTPClassifier. <br>
+*As the final experiment contains similar functions to the python app, please look at the python app python files to see which code was added, adapted, or taken from Alam et al. [1] <br>
+*models.py (RoBERTa model file) and argparse.py (python argument parser) taken from: https://github.com/aiforsec/LADDER/tree/main/attack_pattern <br>
 
 ## Running the python app
 Use Spyder of Anaconda to be sure it worked similarly. Simply run the `PythonApp.py` under the "Python App" folder, after downloading the models in step 1 and 2 above.
