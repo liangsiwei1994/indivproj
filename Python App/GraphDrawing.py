@@ -413,8 +413,8 @@ def generate_sequential_graph(stages, tactics, techniques, attack_phrases, missi
 def generate_empty_graph(missing_tactics, technique_name_df):
     G = pgv.AGraph(strict=False, directed=True)
     stage = 'No \\n Technique \\n Found'
-    techniques = ['']
-    node_label = generate_merged_string(stage, missing_tactics, techniques, technique_name_df)
+    techniques = ''
+    node_label = generate_string(stage, missing_tactics, techniques, '', technique_name_df)
     G.add_node("Test_string", label = node_label, shape = 'record')
     G.layout(prog="dot")  # use dot
     G.draw("file.png")

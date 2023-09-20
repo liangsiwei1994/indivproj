@@ -124,95 +124,112 @@ def get_technique_df(version = None):
 
 
 
-# # Function to remove newline if it is the first character in the description
-# def remove_newline_at_start(text):
-#     if text.startswith("\n"):
-#         return text[1:]
-#     return text
+# Function to remove newline if it is the first character in the description
+def remove_newline_at_start(text):
+    if text.startswith("\n"):
+        return text[1:]
+    return text
 
-# # Remove the tags <code> ... </code>
-# def remove_tags(text):
-#     pattern_open = re.compile(r"<code>")
-#     pattern_close = re.compile(r"</code>\s*")
+# Remove the tags <code> ... </code>
+def remove_tags(text):
+    pattern_open = re.compile(r"<code>")
+    pattern_close = re.compile(r"</code>\s*")
 
-#     text = pattern_open.sub("", text)  # Remove "<code>"
-#     text = pattern_close.sub("", text)  # Remove "</code> " with optional trailing whitespace
+    text = pattern_open.sub("", text)  # Remove "<code>"
+    text = pattern_close.sub("", text)  # Remove "</code> " with optional trailing whitespace
 
-#     return text
+    return text
 
-# # Remove the hyperlinked text in the description
-# def replace_technique_links(text):
-#     pattern = r'\[(.*?)\]\((https://.*?)\)'
-#     replacement = lambda match: match.group(1)
-#     cleaned_text = re.sub(pattern, replacement, text)
+# Remove the hyperlinked text in the description
+def replace_technique_links(text):
+    pattern = r'\[(.*?)\]\((https://.*?)\)'
+    replacement = lambda match: match.group(1)
+    cleaned_text = re.sub(pattern, replacement, text)
     
-#     return cleaned_text
+    return cleaned_text
 
-# # Remove all "(Citations: ... )" in the text
-# def remove_citation(text):
-#     pattern = r"\(Citation: .*?\)"
-#     cleaned_text = re.sub(pattern, "", text)
-#     return cleaned_text
+# Remove all "(Citations: ... )" in the text
+def remove_citation(text):
+    pattern = r"\(Citation: .*?\)"
+    cleaned_text = re.sub(pattern, "", text)
+    return cleaned_text
 
-# # (Trial) To split the text into individual sentences
-# def split_text(text):
-#     pattern = r'(?<!\b(?:i\.e|e\.g|Mr|Ms)\.)\.(?!\w)'
-#     split_text = re.split(pattern, text)
-#     return split_text
+# (Trial) To split the text into individual sentences
+def split_text(text):
+    pattern = r'(?<!\b(?:i\.e|e\.g|Mr|Ms)\.)\.(?!\w)'
+    split_text = re.split(pattern, text)
+    return split_text
+
+# Get Subtechnique name only
+def get_words_after_colon(s):
+    parts = s.split(':', 1)  # Split at the first colon
+    if len(parts) > 1:
+        return parts[1].strip()  # Return the part after the colon, removing any extra spaces
+    return s 
 
 
 
-# # Set up the csv file for cosine similarity
-# def setup_techniques_for_cos_similarity(version = None):
+def setup_techniques_for_cos_similarity(version = None):
     
-#     # # download and parse latest version of ATT&CK STIX data
-#     if version is None:
-#         attackdata = attackToExcel.get_stix_data("enterprise-attack")
-#     else:
-#         attackdata = attackToExcel.get_stix_data("enterprise-attack", version)
-#     techniques_data = stixToDf.techniquesToDf(attackdata, "enterprise-attack")
+    # # download and parse latest version of ATT&CK STIX data
+    if version is None:
+        attackdata = attackToExcel.get_stix_data("enterprise-attack")
+    else:
+        attackdata = attackToExcel.get_stix_data("enterprise-attack", version)
+    techniques_data = stixToDf.techniquesToDf(attackdata, "enterprise-attack")
     
-#     # Get techniques info
-#     techniques_df = techniques_data["techniques"]
-#     # techniques_df.to_csv("techniques_df"+version[:3]+".csv")
+    # Get techniques info
+    techniques_df = techniques_data["techniques"]
+    # techniques_df.to_csv("techniques_df"+version[:3]+".csv")
     
-#     # Replace the ID label the parent's ID
-#     for index, row in techniques_df.iterrows():
-#         techniques_df.at[index, "parent_ID"] = techniques_df[techniques_df["ID"] == row["ID"][:5]]["ID"][:5].iloc[0]
+    # Replace the ID label the parent's ID
+    for index, row in techniques_df.iterrows():
+        techniques_df.at[index, "parent_ID"] = techniques_df[techniques_df["ID"] == row["ID"][:5]]["ID"][:5].iloc[0]
         
-#     # Get the subID ID only
-#     techniques_df['ID'] = np.where(techniques_df["is sub-technique"], '0'+techniques_df['ID'].str[5:9], np.nan)
+    # Get the subID ID only
+    techniques_df['ID'] = np.where(techniques_df["is sub-technique"], '0'+techniques_df['ID'].str[5:9], np.nan)
+    techniques_df = techniques_df.sort_values(by=['parent_ID', 'ID'], ascending = [True, True], na_position = 'first')
+    techniques_df.to_csv("check1.csv")
     
-#     # Get the parent ID
-#     techniques_df['parent_ID'] = np.where(techniques_df["is sub-technique"] == False, techniques_df['parent_ID'], np.nan)
+    # Get the parent ID
+    techniques_df['parent_ID'] = np.where(techniques_df["is sub-technique"] == False, techniques_df['parent_ID'], np.nan)
     
-#     # Get out only the relevant columns
-#     techniques_df = techniques_df[['parent_ID', 'ID', 'name', 'description']]
+    # Get out only the relevant columns
+    techniques_df = techniques_df[['parent_ID', 'ID', 'name', 'description']]
     
-#     # Create a copy to suppress warning
-#     techniques_df_copy = techniques_df.copy()
+    # Create a copy to suppress warning
+    techniques_df_copy = techniques_df.copy()
     
-#     # Clean up 1: Remove newline at the start so that can split into paragraphs
-#     techniques_df_copy['description'] = techniques_df_copy['description'].apply(remove_newline_at_start)
+    # Clean up 1: Remove newline at the start so that can split into paragraphs
+    techniques_df_copy['description'] = techniques_df_copy['description'].apply(remove_newline_at_start)
     
-#     # Split into paragraphs and retain only the first
-#     techniques_df_copy['description'] = techniques_df_copy['description'].str.split('\n').str[0]
+    # Split into paragraphs and retain only the first
+    techniques_df_copy['description'] = techniques_df_copy['description'].str.split('\n').str[0]
     
-#     # Clean up further the first paragraph
-#     techniques_df_copy['description'] = techniques_df_copy['description'].apply(remove_tags)
-#     techniques_df_copy['description'] = techniques_df_copy['description'].apply(replace_technique_links)
-#     techniques_df_copy['description'] = techniques_df_copy['description'].apply(remove_citation)
+    # Clean up further the first paragraph
+    techniques_df_copy['description'] = techniques_df_copy['description'].apply(remove_tags)
+    techniques_df_copy['description'] = techniques_df_copy['description'].apply(replace_technique_links)
+    techniques_df_copy['description'] = techniques_df_copy['description'].apply(remove_citation)
     
-#     # split into individual sentences
-#     # techniques_df_copy['description'] = techniques_df_copy['description'].apply(split_text)
+    # Remove technique name form sub-tech name
+    techniques_df_copy['name'] = techniques_df_copy['name'].apply(get_words_after_colon)
     
-#     # Save the file
-#     if version is None:
-#         today = date.today()
-#         dateToday = today.strftime("%d%B%Y")
-#         techniques_df_copy.to_csv("enterprise-techniqueslatest"+dateToday+".csv")
-#     else:
-#         techniques_df_copy.to_csv("enterprise-techniques"+version[:3]+".csv")
+    
+    techniques_df_copy = techniques_df_copy.rename(columns = {"ID":""})
+    techniques_df_copy = techniques_df_copy.rename(columns={"parent_ID": "ID", "name": "Name", "description": "Description"})
+    # techniques_df_copy = techniques_df_copy[]
+    
+    
+    # split into individual sentences
+    # techniques_df_copy['description'] = techniques_df_copy['description'].apply(split_text)
+    
+    # Save the file
+    if version is None:
+        today = date.today()
+        dateToday = today.strftime("%d%B%Y")
+        techniques_df_copy.to_csv("enterprise-techniqueslatest"+dateToday+".csv", index = False)
+    else:
+        techniques_df_copy.to_csv("enterprise-techniques"+version[:3]+".csv", index = False)
     
 
 
@@ -243,6 +260,7 @@ def get_technique_name(ID, techniques_df_copy3 = None, version = None):
 
 
 
-# if __name__ == "__main__":
-#     main()
+if __name__ == "__main__":
+    setup_techniques_for_cos_similarity("v13.1")
+    
     

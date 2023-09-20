@@ -34,5 +34,45 @@ The actors were able to proxy RDP sessions, which were only observable on the lo
 outgoing HTTPS port 443 connections to url and url ( the prior domain in reverse
 Once the threat actors established a deep foothold in the network and moved laterally to the domain controller, they executed the following PowerShell command on the Active Directory to obtain a list of all machines attached to the domain:
 obtain a list of all machines attached to the domain
+Additionally, the threat actor was observed attempting to dump the Local Security Authority Subsystem Service (LSASS) process with task manager but this was stopped by additional anti-virus the FCEB organization had installed.In February 2022, the threat actors exploited Log4Shell for initial access to the organization’s unpatched VMware Horizon server.
+dump the Local Security Authority Subsystem Service ( LSASS ) process with task manager
+Additionally, the threat actor was observed attempting to dump the Local Security Authority Subsystem Service (LSASS) process with task manager but this was stopped by additional anti-virus the FCEB organization had installed.In February 2022, the threat actors exploited Log4Shell for initial access to the organization’s unpatched VMware Horizon server.
+exploited Log4Shell for initial access
+The actors’ exploit payload ran the following PowerShell command that added an exclusion rule to Windows Defender:
+added an exclusion rule to Windows Defender
+The exclusion rule allowlisted the entire path, enabling threat actors to download tools to the path without virus scans.
+allowlisted the entire path , enabling threat actors to download tools to the path without virus scans
+The exploit payload then downloaded mdeploy.text from host/mdepoy.txt to path When executed, executable downloaded document from host and removed executable from the disk.
+downloaded mdeploy.text from
+The exploit payload then downloaded mdeploy.text from host/mdepoy.txt to path When executed, executable downloaded document from host and removed executable from the disk.
+executed , executable downloaded document from host and removed executable from the disk
+This file can create a local user account and tests for internet connectivity by pinging host.
+create a local user account
+This file can create a local user account and tests for internet connectivity by pinging host.
+tests for internet connectivity by pinging host
+The exploit payload created a Scheduled Task that executed executable daily as SYSTEM.
+created a Scheduled Task that executed executable daily as SYSTEM
+The Scheduled Task was named executable to masquerade as a legitimate Windows task.
+Scheduled Task was named executable to masquerade as a legitimate Windows task
+After obtaining initial access and installing XMRig on the VMWare Horizon server, the actors used RDP and the built-in Windows user account DefaultAccount to move laterally to a VMware VDI-KMS host.
+used RDP and the built-in Windows user account DefaultAccount to move laterally to a VMware VDI-KMS host
+Once the threat actor established themselves on the VDI-KMS host, CISA observed the actors download around 30 megabytes of files from url server associated with host.
+download around 30 megabytes of files from url server associated with host
+Ngrok – a reverse proxy tool for proxying an internal service out onto an Ngrok domain, which the user can then access at a randomly generated subdomain at *.url.
+proxying an internal service out onto an Ngrok domain , which the user can then access at a randomly generated subdomain at
+The threat actors then executed Mimikatz on VDI-KMS to harvest credentials and created a rogue domain administrator account.
+executed Mimikatz on VDI-KMS to harvest credentials
+The threat actors then executed Mimikatz on VDI-KMS to harvest credentials and created a rogue domain administrator account.
+created a rogue domain administrator account
+Using the newly created account, the actors leveraged RDP to propagate to several hosts within the network.
+actors leveraged RDP to propagate to several hosts within the network
+Upon logging into each host, the actors manually disabled Windows Defender via the Graphical User Interface (GUI) and implanted Ngrok executables and configuration files.
+implanted Ngrok executables and configuration files
+The threat actors were able to implant Ngrok on multiple hosts to ensure Ngrok’s persistence should they lose access to a machine during a routine reboot.
+implant Ngrok on multiple hosts to ensure Ngrok ’ s persistence should they lose access to a machine during a routine reboot
+The actors were able to proxy RDP sessions, which were only observable on the local network as outgoing HTTPS port 443 connections to url and url (the prior domain in reverse).
+outgoing HTTPS port 443 connections to url and url ( the prior domain in reverse
+Once the threat actors established a deep foothold in the network and moved laterally to the domain controller, they executed the following PowerShell command on the Active Directory to obtain a list of all machines attached to the domain:
+obtain a list of all machines attached to the domain
 Additionally, the threat actor was observed attempting to dump the Local Security Authority Subsystem Service (LSASS) process with task manager but this was stopped by additional anti-virus the FCEB organization had installed.
 dump the Local Security Authority Subsystem Service ( LSASS ) process with task manager

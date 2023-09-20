@@ -18,6 +18,7 @@ import re
 # Functions from other files
 from GraphDrawing import *
 from getLatestMitre import find_latest_version
+from AppendProcedureFunctions3 import setup_file_for_reference
 
 # Placed with ATTACK-BERT from mp-net-v2
 bert_model = SentenceTransformer('basel/ATTACK-BERT')
@@ -231,7 +232,7 @@ def remove_consec_newline(s):
 # Uses both sentences and phrases
 def get_all_attack_patterns(fname, th=0.3):
 
-    mapped_all = {}
+    mapped_all = []
     mapped = {}
     with open(fname, 'r', encoding='utf-8') as f:
         text = f.read()
@@ -267,17 +268,27 @@ def get_all_attack_patterns(fname, th=0.3):
                         sentence = True
                     else:
                         sents.append(sent)
+                 
+    # print("PHRASES:")
+    # print(phrases)
 
     for i, line in enumerate(sents):
         if len(line) > 0:
+            # print(phrases[i])
+            # print(line)
             _id, dist, match_proc_found = get_mitre_id(phrases[i], line)
+            # print(dist)
             if dist < th:
                 if _id not in mapped:
                     mapped[_id] = dist, phrases[i]
                 else:
                     if dist < mapped[_id][0]:
                         mapped[_id] = mapped[_id] = dist, phrases[i]
-                mapped_all[phrases[i]] = _id, dist
+                entry = (phrases[i], _id, dist)
+                mapped_all.append(entry)
+    
+    # print("MAPPED ALL:")
+    # print(mapped_all)
     return mapped, mapped_all
  
     
@@ -325,10 +336,11 @@ def part2trial(version, threshold=0.3):
         scores.append(str(v[0]))
         tech_name.append(attack_pattern_dict[k][0][0])
         
-    for k, v in ret2.items():
-        all_substrings.append(k)
-        all_labels.append(v[0])
-        all_scores.append(v[1])
+    for entry in ret2:
+        phrase, _id, dist = entry
+        all_substrings.append(phrase)
+        all_labels.append(_id)
+        all_scores.append(dist)
         
     return substrings, labels, scores, tech_name, all_substrings, all_labels, all_scores
 
@@ -375,6 +387,41 @@ def get_matching_files(directory):
 
 
 
+
+
+
+######################################################################
+# This function checks if substring 2 is part of substring 1 WITHOUT looking at spaces or tabs
+######################################################################
+def strings_match_with_spaces_or_tabs(s1, s2):
+    # Normalize both s1 and s2 by removing all spaces and tabs.
+    s1_normalized = ''.join(s1.split(' ')).replace('\t', '')
+    s2_normalized = ''.join(s2.split(' ')).replace('\t', '')
+
+    # Check if the normalized s2 is a substring of the normalized s1.
+    index_normalized = s1_normalized.find(s2_normalized)
+
+    if index_normalized == -1:
+        return False, -1, -1
+
+    char_count = 0
+    original_index = 0
+    while char_count < index_normalized:
+        if s1[original_index] not in [' ', '\t']:
+            char_count += 1
+        original_index += 1
+
+    start_pos = original_index
+
+    char_count = 0
+    while char_count < len(s2_normalized):
+        if s1[original_index] not in [' ', '\t']:
+            char_count += 1
+        original_index += 1
+
+    end_pos = original_index
+
+    return True, start_pos, end_pos
 
 
 
@@ -539,13 +586,21 @@ class Application(tk.Frame):
                 print("CURRENT DATABASE ALREADY THE LATEST VERSION")
             else:
                 print("UPDATING...")
+                print(current_latest)
                 setup_file_for_reference("v" + str(current_latest))
+            selected_version = "v" + str(current_latest)
+            with open('latest_version_no.txt', 'w') as file:
+                    file.write(selected_version[1:])
         
         threshold_value = self.threshold_entry.get()
         substrings, labels, scores, tech_names, all_substrings, all_labels, all_scores = part2trial(selected_version, float(threshold_value))
         
-        all_labels_copy = all_labels.copy()
-        all_substrings_copy = all_substrings.copy()
+        if all_labels is None or all_substrings is None:
+            all_labels_copy = None
+            all_substrings_copy = None
+        else:
+            all_labels_copy = all_labels.copy()
+            all_substrings_copy = all_substrings.copy()
         
         attack_lifecycle_mapping(all_labels_copy, all_substrings_copy, version=selected_version)
         
@@ -559,6 +614,14 @@ class Application(tk.Frame):
         self.img_label.grid(row=3, column=0, pady=5, padx = (200,0) )
         # Display the Show Image Button at the end
         self.show_img_button.grid(row=3, column=1, pady=5, padx = (0, 200))
+        
+        global attack_pattern_dict
+        global technique_mapping
+        global embedding_memo
+        
+        attack_pattern_dict = {} 
+        technique_mapping = {}
+        embedding_memo = {}
 
     def highlight_substrings(self, user_input, substrings, labels, scores):
         self.highlight_label = tk.Label(self, text="Input Text with Identified Techniques", font=self.custom_font_bold)
@@ -572,62 +635,245 @@ class Application(tk.Frame):
             self.text_output.insert(tk.END, user_input)  # Simply insert the original text
             return
     
+        last_found_position = 0
         position = 0  # Maintain a position index for where we are in the user input string
+        current_substring_index = 0 # Tracker to make sure we are processing the substrings in sequence
+        
+        unmatched_items = list(zip(substrings, labels, scores))
+        # print(substrings)
     
-        while position < len(user_input):
-            # Check if any of the substrings occur at the current position
-            for substring, label, score in zip(substrings, labels, scores):
-                if user_input.startswith(substring, position) and position not in labelled_position:
-                    # Insert the highlighted substring
-                    self.text_output.insert(tk.END, substring + ' ', 'highlight')
-                    # Insert the label with a space before and after
-                    self.text_output.insert(tk.END, '[' + label + ', ' + str(score)[:5] + ']', 'label')
-                    # Move the position by the length of the matched substring
-                    position += len(substring)
-                    # Keep track of duplicate position in case of duplicate substrings
-                    labelled_position.append(position)
-                    break
-                else:
-                    # Replace with all the wonky characters due to phrase extraction
-                    substring = substring.replace(" ( ", " (")
-                    substring = substring.replace(" ) ", ") ")
-                    substring = substring.replace(" ’", "’")
-                    substring = substring.replace(" , ", ", ")
-                    substring = substring.replace(" '", "'")
-                    substring = substring.replace("“ ", "“")
-                    substring = substring.replace(" ”", "”")
-                    substring = substring.replace("`` ", '"')
-                    substring = substring.replace(" ''", '"')
-                    if user_input.startswith(substring, position) and position not in labelled_position:
-                        # Insert the highlighted substring
-                        self.text_output.insert(tk.END, substring + ' ', 'highlight')
-                        # Insert the label with a space before and after
-                        self.text_output.insert(tk.END, '[' + label + ', ' + str(score)[:5] + ']', 'label')
-                        # Move the position by the length of the matched substring
-                        position += len(substring)
-                        # Keep track of duplicate position in case of duplicate substrings
-                        labelled_position.append(position)
-                        break
-                                      
-                    else:
-                        # Try again on the closed inverted comma in case it's an apostrophe
-                        substring = substring.replace("’ ", "’")
-                        if user_input.startswith(substring, position) and position not in labelled_position:
-                            # Insert the highlighted substring
-                            self.text_output.insert(tk.END, substring + ' ', 'highlight')
-                            # Insert the label with a space before and after
-                            self.text_output.insert(tk.END, '[' + label + ', ' + str(score)[:5] + ']', 'label')
-                            # Move the position by the length of the matched substring
-                            position += len(substring)
-                            # Keep track of duplicate position in case of duplicate substrings
-                            labelled_position.append(position)
-                            break
+        while position < len(user_input) and current_substring_index < len(substrings):
+            
+            substring, label, score = substrings[current_substring_index], labels[current_substring_index], scores[current_substring_index]
+
+            # We'll use a variable to store the original substring since it can change after replacements
+            original_substring = substring
+                        
                     
+            replacements_sets = [
+                [
+                    ("( ", "("),
+                    (" )", ")"),
+                    ("`` ", '"'),
+                    (" ''", '"'),
+                    (" ’", "’"),
+                    (" ,", ","),
+                    (" '", "'"),
+                    ("“ ", "“"),
+                    (" ”", "”"),
+                    (" $", '$'),
+                    ("[ ", "["),
+                    (" ]", "]")
+                ],
+                [
+                    ("’ ", "’"),
+                    (" - ", "	- ")
+                ],
+                [
+                    (" [", "["),
+                    ("] ", "]"),
+                    (" (", "("),
+                    (") ", ")"),
+                ],
+                [
+                    ("''", '"')
+                ]
+                
+            ]
+            
+            # Check for the original substring
+            match_position = user_input.find(original_substring, position)
+            using_space_logic = False
+            # print(original_substring)
+            # print(match_position)
+            
+            if match_position == -1:
+                for repl_set in replacements_sets:
+                    # Apply the replacement set to the original substring
+                    for repl in repl_set:
+                        if "system" in substring:
+                            print(substring)
+                        substring = substring.replace(repl[0], repl[1])
+                    
+                    # Attempt to find the modified substring from the last found position
+                    match_position = user_input.find(substring, position)
+                    
+                    if match_position != -1:
+                        break
+                    
+             # If still not found, try matching with spaces/tabs logic
+            if match_position == -1:
+                found, start_pos, end_pos = strings_match_with_spaces_or_tabs(user_input[position:], substring)
+                if found:  # This means we found a match
+                    using_space_logic = True
+                    match_position = start_pos + position  # Offset match_position by current position in user_input
+                    end_position = end_pos + position  # Offset end_pos as well
+            
+                    # Extract the matched substring from the original text
+                    substring = user_input[match_position:end_position]
+
+            # If it's found
+            if match_position != -1:
+                # Insert everything from the last_found_position up to the matched substring
+                self.text_output.insert(tk.END, user_input[last_found_position:match_position])
+        
+                # Insert the highlighted substring and the label
+                self.text_output.insert(tk.END, substring, 'highlight')
+                self.text_output.insert(tk.END, ' [' + label + ', ' + str(score)[:5] + ']', 'label')
+                
+                # Update the last_found_position and position
+                if using_space_logic:
+                    last_found_position = end_position  # Use the updated end_position from the spaces/tabs logic
+                else:
+                    last_found_position = match_position + len(substring)
+                
+                position = last_found_position
+                current_substring_index += 1  
+        
+                # Mark this substring as matched
+                if (original_substring, label, score) in unmatched_items:
+                    unmatched_items.remove((original_substring, label, score))
             else:
-                # If no substring matched, insert one character from the user input without any highlighting
-                self.text_output.insert(tk.END, user_input[position])
-                # Move to the next character in the user input
-                position += 1
+                # Move to the next substring if no match found
+                current_substring_index += 1       
+                
+                
+                
+        # Insert any remaining characters from user_input
+        if position < len(user_input):
+            self.text_output.insert(tk.END, user_input[position:])
+        
+        # Print if there are unmatched phrases
+        if unmatched_items:
+            self.text_output.insert(tk.END, "\nUnmatched phrases: \n")
+            for substring, label, score in unmatched_items:
+                self.text_output.insert(tk.END, '-> ' + substring + ' ', 'highlight')
+                self.text_output.insert(tk.END, '[' + label + ', ' + str(score)[:5] + ']', 'label')
+                self.text_output.insert(tk.END, '\n')
+        
+        
+        
+        
+            
+            
+        #     if current_substring_index >= len(substrings):
+        #         # If all substrings have been processed, add the remaining user_input text
+        #         self.text_output.insert(tk.END, user_input[position:])
+        #         break
+            
+        #     position = last_found_position
+        #     substring, label, score = substrings[current_substring_index], labels[current_substring_index], scores[current_substring_index]
+                
+        #     found = False
+        #     if user_input.startswith(substring, position) and position not in labelled_position:
+        #         # Insert the highlighted substring
+        #         self.text_output.insert(tk.END, substring + ' ', 'highlight')
+        #         # Insert the label with a space before and after
+        #         self.text_output.insert(tk.END, '[' + label + ', ' + str(score)[:5] + ']', 'label')
+        #         # Move the position by the length of the matched substring
+        #         position += len(substring)
+        #         # Keep track of duplicate position in case of duplicate substrings
+        #         labelled_position.append(position)
+        #         # print(substring)
+        #         # print(unmatched_items)
+        #         # If the same phrase appears twice, just label them
+        #         if (substring, label, score) in unmatched_items:
+        #             unmatched_items.remove((substring, label, score))
+        #         current_substring_index += 1
+        #         last_found_position = position
+        #         found = True
+        #         # break
+        #     else:
+        #         # Replace with all the wonky characters due to phrase extraction
+        #         original_substring = substring
+        #         substring = substring.replace(" ( ", " (")
+        #         substring = substring.replace(" ) ", ") ")
+        #         substring = substring.replace(" ’", "’")
+        #         substring = substring.replace(" , ", ", ")
+        #         substring = substring.replace(" '", "'")
+        #         substring = substring.replace("“ ", "“")
+        #         substring = substring.replace(" ”", "”")
+        #         substring = substring.replace("`` ", '"')
+        #         substring = substring.replace(" ''", '"')
+        #         substring = substring.replace(" $", '$')
+        #         substring = substring.replace(" [ ", " [")
+        #         substring = substring.replace(" ] ", "] ")
+        #         if user_input.startswith(substring, position) and position not in labelled_position:
+        #             # Insert the highlighted substring
+        #             self.text_output.insert(tk.END, substring + ' ', 'highlight')
+        #             # Insert the label with a space before and after
+        #             self.text_output.insert(tk.END, '[' + label + ', ' + str(score)[:5] + ']', 'label')
+        #             # Move the position by the length of the matched substring
+        #             position += len(substring)
+        #             # Keep track of duplicate position in case of duplicate substrings
+        #             labelled_position.append(position)
+        #             if (original_substring, label, score) in unmatched_items:
+        #                 unmatched_items.remove((original_substring, label, score))
+        #             current_substring_index += 1
+        #             last_found_position = position
+        #             found = True
+        #             # break
+                                  
+        #         else:
+        #             # Try again on the closed inverted comma in case it's an apostrophe
+        #             substring = substring.replace(" [", "[")
+        #             substring = substring.replace("] ", "]")
+        #             substring = substring.replace(" )", ")")
+        #             substring = substring.replace(" (", "(")
+                    
+        #             if user_input.startswith(substring, position) and position not in labelled_position:
+        #                 # Insert the highlighted substring
+        #                 self.text_output.insert(tk.END, substring + ' ', 'highlight')
+        #                 # Insert the label with a space before and after
+        #                 self.text_output.insert(tk.END, '[' + label + ', ' + str(score)[:5] + ']', 'label')
+        #                 # Move the position by the length of the matched substring
+        #                 position += len(substring)
+        #                 # Keep track of duplicate position in case of duplicate substrings
+        #                 labelled_position.append(position)
+        #                 if (original_substring, label, score) in unmatched_items:
+        #                     unmatched_items.remove((original_substring, label, score))
+        #                 current_substring_index += 1
+        #                 last_found_position = position
+        #                 found = True
+        #                 # break
+                    
+        #             else:
+        #                 # Try again on the closed inverted comma in case it's an apostrophe
+        #                 substring = substring.replace("’ ", "’")
+        #                 substring = substring.replace(" - ", "	- ")
+                        
+        #                 if user_input.startswith(substring, position) and position not in labelled_position:
+        #                     # Insert the highlighted substring
+        #                     self.text_output.insert(tk.END, substring + ' ', 'highlight')
+        #                     # Insert the label with a space before and after
+        #                     self.text_output.insert(tk.END, '[' + label + ', ' + str(score)[:5] + ']', 'label')
+        #                     # Move the position by the length of the matched substring
+        #                     position += len(substring)
+        #                     # Keep track of duplicate position in case of duplicate substrings
+        #                     labelled_position.append(position)
+        #                     if (original_substring, label, score) in unmatched_items:
+        #                         unmatched_items.remove((original_substring, label, score))
+        #                     current_substring_index += 1
+        #                     last_found_position = position
+        #                     found = True
+        #                     # break
+        #     if not found:
+        #         # If no substring matched, insert one character from the user input without any highlighting
+        #         self.text_output.insert(tk.END, user_input[position])
+        #         # Move to the next character in the user input
+        #         position += 1
+                    
+                        
+        
+        # # Print if there are stuff we cannot match to the input text.
+        # if unmatched_items:
+        #     self.text_output.insert(tk.END, "\nUnmatched phrases: \n")
+        #     for substring, label, score in unmatched_items:
+        #         self.text_output.insert(tk.END, '-> ' + substring + ' ', 'highlight')
+        #         self.text_output.insert(tk.END, '[' + label + ', ' + str(score)[:5] + ']', 'label')
+        #         self.text_output.insert(tk.END, '\n')
+
+        
                 
         self.text_output.tag_config('highlight', foreground='red', font=self.custom_font_bold)
         self.text_output.tag_config('label', foreground='red', background='yellow', font=self.custom_font_bold)
